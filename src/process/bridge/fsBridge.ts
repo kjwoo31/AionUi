@@ -13,7 +13,6 @@ import http from 'node:http';
 import { app } from 'electron';
 import JSZip from 'jszip';
 import { ipcBridge } from '../../common';
-import { ConfigStorage } from '../../common/storage';
 import { getSystemDir, getAssistantsDir } from '../initStorage';
 import { readDirectoryRecursive } from '../utils';
 
@@ -723,16 +722,19 @@ export function initFsBridge(): void {
     const fileContent = await readAssistantResource('rules', assistantId, locale, ruleFilePattern);
     if (fileContent) return fileContent;
 
-    // Fallback: read context from config (plugin-generated assistants store context in config)
+    // Fallback: read context directly from config file (plugin-generated assistants)
     try {
-      const agents = ((await ConfigStorage.get('acp.customAgents')) || []) as Array<{ id: string; context?: string }>;
+      const configPath = path.join(app.getPath('userData'), 'config', 'aionui-config.txt');
+      const raw = await fs.readFile(configPath, 'utf-8');
+      const decoded = decodeURIComponent(atob(raw));
+      const data = JSON.parse(decoded);
+      const agents = (data['acp.customAgents'] || []) as Array<{ id: string; context?: string }>;
       const agent = agents.find((a) => a.id === assistantId);
       if (agent?.context) {
-        console.log(`[fsBridge] Loaded rules from config for ${assistantId} (${agent.context.length} chars)`);
         return agent.context;
       }
-    } catch (error) {
-      console.warn(`[fsBridge] Failed to load config fallback for ${assistantId}:`, error);
+    } catch {
+      // Config read failed
     }
     return '';
   });

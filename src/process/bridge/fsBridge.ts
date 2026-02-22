@@ -13,6 +13,7 @@ import http from 'node:http';
 import { app } from 'electron';
 import JSZip from 'jszip';
 import { ipcBridge } from '../../common';
+import { ConfigStorage } from '../../common/storage';
 import { getSystemDir, getAssistantsDir } from '../initStorage';
 import { readDirectoryRecursive } from '../utils';
 
@@ -716,12 +717,21 @@ export function initFsBridge(): void {
   });
 
   // 读取助手规则文件 / Read assistant rule file from user directory or builtin rules
+  // Falls back to assistant's context field in config (for plugin-generated assistants)
   ipcBridge.fs.readAssistantRule.provider(async ({ assistantId, locale = 'en-US' }) => {
     try {
-      return await readAssistantResource('rules', assistantId, locale, ruleFilePattern);
-    } catch (error) {
-      console.error('Failed to read assistant rule:', error);
-      throw error;
+      const content = await readAssistantResource('rules', assistantId, locale, ruleFilePattern);
+      if (content) return content;
+    } catch {
+      // File not found — fall through to config fallback
+    }
+    // Fallback: read context from config (plugin-generated assistants store context in DB)
+    try {
+      const agents: Array<{ id: string; context?: string }> = (await ConfigStorage.get('acp.customAgents')) || [];
+      const agent = agents.find((a) => a.id === assistantId);
+      return agent?.context || '';
+    } catch {
+      return '';
     }
   });
 

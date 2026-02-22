@@ -22,7 +22,7 @@ import type { AcpBackend } from '@/types/acpTypes';
 
 /**
  * Get the default model for Channel assistant (Telegram)
- * Reads from saved config or falls back to default Gemini model
+ * Reads from saved config or falls back to default Anthropic Claude model
  */
 
 export async function getChannelDefaultModel(_platform: PluginType): Promise<TProviderWithModel> {
@@ -57,14 +57,15 @@ export async function getChannelDefaultModel(_platform: PluginType): Promise<TPr
       }
     }
 
-    // Fallback: try to get any Gemini provider
+    // Fallback: try to get any configured provider (prefer anthropic, then any)
     const providers = await ProcessConfig.get('model.config');
     if (providers && Array.isArray(providers)) {
-      const geminiProvider = providers.find((p) => p.platform === 'gemini');
-      if (geminiProvider && geminiProvider.model?.length > 0) {
+      const anthropicProvider = providers.find((p) => p.platform === 'anthropic');
+      const fallbackProvider = anthropicProvider || providers.find((p) => p.model?.length > 0);
+      if (fallbackProvider && fallbackProvider.model?.length > 0) {
         return {
-          ...geminiProvider,
-          useModel: geminiProvider.model[0],
+          ...fallbackProvider,
+          useModel: fallbackProvider.model[0],
         } as TProviderWithModel;
       }
     }
@@ -72,14 +73,14 @@ export async function getChannelDefaultModel(_platform: PluginType): Promise<TPr
     console.warn('[SystemActions] Failed to get saved model, using default:', error);
   }
 
-  // Default fallback - minimal config for Gemini
+  // Default fallback - minimal config for Anthropic Claude
   return {
-    id: 'gemini_default',
-    platform: 'gemini',
-    name: 'Gemini',
-    baseUrl: 'https://generativelanguage.googleapis.com',
+    id: 'anthropic_default',
+    platform: 'anthropic',
+    name: 'Anthropic',
+    baseUrl: 'https://api.anthropic.com',
     apiKey: '',
-    useModel: 'gemini-2.0-flash',
+    useModel: 'claude-sonnet-4-6',
   };
 }
 

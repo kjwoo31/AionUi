@@ -251,14 +251,13 @@ export function initAcpConversationBridge(): void {
     }
   });
 
-  // Get Claude model from ~/.claude/settings.json
-  ipcBridge.acpConversation.getClaudeSettingsModel.provider(async () => {
+  // Get Claude settings from ~/.claude/settings.json (model + defaultMode)
+  ipcBridge.acpConversation.getClaudeSettings.provider(async () => {
     try {
-      const { getClaudeModel } = await import('@/agent/acp/utils');
-      const model = getClaudeModel();
-      return { success: true, data: { model } };
+      const { getClaudeModel, getClaudeDefaultMode } = await import('@/agent/acp/utils');
+      return { success: true, data: { model: getClaudeModel(), defaultMode: getClaudeDefaultMode() } };
     } catch {
-      return { success: true, data: { model: null } };
+      return { success: true, data: { model: null, defaultMode: null } };
     }
   });
 }

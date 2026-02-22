@@ -9,10 +9,16 @@ import * as os from 'os';
 import * as path from 'path';
 
 export interface ClaudeSettings {
+  model?: string;
+  permissions?: {
+    defaultMode?: string;
+  };
   env?: {
     ANTHROPIC_MODEL?: string;
     [key: string]: string | undefined;
   };
+  enabledPlugins?: Record<string, boolean>;
+  [key: string]: unknown;
 }
 
 /**
@@ -41,11 +47,20 @@ export function readClaudeSettings(): ClaudeSettings | null {
 }
 
 /**
- * Get ANTHROPIC_MODEL from Claude settings (under env object)
+ * Get model from Claude settings.
+ * Priority: settings.model > settings.env.ANTHROPIC_MODEL
  */
 export function getClaudeModel(): string | null {
   const settings = readClaudeSettings();
-  return settings?.env?.ANTHROPIC_MODEL ?? null;
+  return settings?.model ?? settings?.env?.ANTHROPIC_MODEL ?? null;
+}
+
+/**
+ * Get default mode from Claude settings (e.g., 'bypassPermissions')
+ */
+export function getClaudeDefaultMode(): string | null {
+  const settings = readClaudeSettings();
+  return settings?.permissions?.defaultMode ?? null;
 }
 
 // --- CodeBuddy settings support ---

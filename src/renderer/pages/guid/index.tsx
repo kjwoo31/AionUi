@@ -174,6 +174,13 @@ const Guid: React.FC = () => {
   const { activeBorderColor, inactiveBorderColor, activeShadow } = useInputFocusRing();
   const localeKey = resolveLocaleKey(i18n.language);
 
+  // Load Claude settings from ~/.claude/settings.json (model + defaultMode)
+  const { data: claudeSettings } = useSWR('acp.claude-settings', async () => {
+    const result = await ipcBridge.acpConversation.getClaudeSettings.invoke();
+    return result.success ? result.data : null;
+  });
+  const claudeSettingsModel = claudeSettings?.model ?? null;
+
   // 打开外部链接 / Open external link
   const location = useLocation();
   const [input, setInput] = useState('');
@@ -296,6 +303,13 @@ const Guid: React.FC = () => {
   const selectedAgentInfo = useMemo(() => findAgentByKey(selectedAgentKey), [selectedAgentKey, availableAgents, customAgents]);
   const isPresetAgent = Boolean(selectedAgentInfo?.isPreset);
   const [selectedMode, setSelectedMode] = useState<string>('bypassPermissions');
+
+  // Sync mode from ~/.claude/settings.json when loaded
+  useEffect(() => {
+    if (claudeSettings?.defaultMode) {
+      setSelectedMode(claudeSettings.defaultMode);
+    }
+  }, [claudeSettings?.defaultMode]);
   const [selectedCodexModel, setSelectedCodexModel] = useState<string>(DEFAULT_CODEX_MODEL_ID);
   const [isPlusDropdownOpen, setIsPlusDropdownOpen] = useState(false);
   const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(true);
@@ -485,12 +499,6 @@ const Guid: React.FC = () => {
   );
 
   // 获取可用的 ACP agents - 基于全局标记位
-  // Load Claude model from ~/.claude/settings.json
-  const { data: claudeSettingsModel } = useSWR('acp.claude-settings-model', async () => {
-    const result = await ipcBridge.acpConversation.getClaudeSettingsModel.invoke();
-    return result.success ? result.data?.model : null;
-  });
-
   const { data: availableAgentsData } = useSWR('acp.agents.available', async () => {
     const result = await ipcBridge.acpConversation.getAvailableAgents.invoke();
     if (result.success) {

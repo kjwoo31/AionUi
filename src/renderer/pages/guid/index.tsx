@@ -1744,7 +1744,7 @@ const Guid: React.FC = () => {
                   </Tooltip>
                 )}
 
-                {supportsModeSwitch(selectedAgent) && <AgentModeSelector backend={selectedAgent} compact initialMode={selectedMode} onModeSelect={(mode) => setSelectedMode(mode)} />}
+                {supportsModeSwitch(currentEffectiveAgentInfo.agentType || selectedAgent) && <AgentModeSelector backend={currentEffectiveAgentInfo.agentType || selectedAgent} compact initialMode={selectedMode} onModeSelect={(mode) => setSelectedMode(mode)} />}
 
                 {isPresetAgent && selectedAgentInfo && (
                   <div

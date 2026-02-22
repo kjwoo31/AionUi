@@ -963,8 +963,23 @@ async function syncAssistantsFromClaudePlugins(configFile: any): Promise<void> {
 
     // No matching preset → create a new assistant entry for this plugin
     const pluginName = pluginKey.split('@')[0];
+    const publisher = pluginKey.split('@')[1] || '';
     const pluginId = `plugin-${pluginName}`;
-    if (existingIds.has(pluginId)) continue;
+    if (existingIds.has(pluginId)) {
+      // Update context if empty (for previously created plugins without README)
+      const existing = agents.find((a: AcpBackendConfig) => a.id === pluginId);
+      if (existing && !existing.context) {
+        const pluginContext = loadPluginReadme(publisher, pluginName);
+        if (pluginContext) {
+          existing.context = pluginContext;
+          changed = true;
+        }
+      }
+      continue;
+    }
+
+    // Read README.md from plugin cache as rules/context
+    const pluginContext = loadPluginReadme(publisher, pluginName);
 
     const meta = pluginMeta[pluginKey] || { name: pluginName, avatar: '🔌', description: `Claude Code plugin: ${pluginName}` };
     agents.push({
@@ -975,6 +990,7 @@ async function syncAssistantsFromClaudePlugins(configFile: any): Promise<void> {
       enabled: true,
       isPreset: true,
       isBuiltin: false,
+      context: pluginContext,
     } as AcpBackendConfig);
     existingIds.add(pluginId);
     changed = true;
@@ -983,6 +999,33 @@ async function syncAssistantsFromClaudePlugins(configFile: any): Promise<void> {
 
   if (changed) {
     await configFile.set('acp.customAgents', agents);
+  }
+}
+
+/**
+ * Load README.md from Claude Code plugin cache directory.
+ * Searches the latest version directory for the plugin.
+ */
+function loadPluginReadme(publisher: string, pluginName: string): string {
+  try {
+    const homeDir = app.getPath('home');
+    const pluginCacheDir = path.join(homeDir, '.claude', 'plugins', 'cache', publisher, pluginName);
+    if (!existsSync(pluginCacheDir)) return '';
+
+    // Find latest version directory
+    const versions = readdirSync(pluginCacheDir)
+      .filter((v: string) => /^\d/.test(v))
+      .sort()
+      .reverse();
+    const versionDir = versions[0];
+    if (!versionDir) return '';
+
+    const readmePath = path.join(pluginCacheDir, versionDir, 'README.md');
+    if (!existsSync(readmePath)) return '';
+
+    return readFileSync(readmePath, 'utf-8');
+  } catch {
+    return '';
   }
 }
 

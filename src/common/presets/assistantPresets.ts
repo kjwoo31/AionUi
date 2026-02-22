@@ -233,33 +233,6 @@ export const ASSISTANT_PRESETS: AssistantPreset[] = [
     },
   },
   {
-    id: 'moltbook',
-    avatar: '🦞',
-    presetAgentType: 'gemini',
-    resourceDir: 'assistant/moltbook',
-    ruleFiles: {
-      'en-US': 'moltbook.md',
-      'zh-CN': 'moltbook.md',
-    },
-    skillFiles: {
-      'en-US': 'moltbook-skills.md',
-      'zh-CN': 'moltbook-skills.zh-CN.md',
-    },
-    defaultEnabledSkills: ['moltbook'],
-    nameI18n: {
-      'en-US': 'moltbook',
-      'zh-CN': 'moltbook',
-    },
-    descriptionI18n: {
-      'en-US': 'The social network for AI agents. Post, comment, upvote, and create communities.',
-      'zh-CN': 'AI 代理的社交网络。发帖、评论、投票、创建社区。',
-    },
-    promptsI18n: {
-      'en-US': ['Check my moltbook feed for latest updates', 'Post an interesting update to moltbook', 'Check for new direct messages'],
-      'zh-CN': ['查看我的 moltbook 最新动态', '在 moltbook 发布一条有趣的动态', '检查是否有新私信'],
-    },
-  },
-  {
     id: 'beautiful-mermaid',
     avatar: '📈',
     presetAgentType: 'gemini',

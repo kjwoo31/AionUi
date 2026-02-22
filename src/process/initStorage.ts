@@ -969,7 +969,7 @@ async function syncAssistantsFromClaudePlugins(configFile: any): Promise<void> {
       // Update context if empty (for previously created plugins without README)
       const existing = agents.find((a: AcpBackendConfig) => a.id === pluginId);
       if (existing && !existing.context) {
-        const pluginContext = loadPluginReadme(publisher, pluginName);
+        const pluginContext = loadPluginSkillsContent(publisher, pluginName);
         if (pluginContext) {
           existing.context = pluginContext;
           changed = true;
@@ -979,7 +979,7 @@ async function syncAssistantsFromClaudePlugins(configFile: any): Promise<void> {
     }
 
     // Read README.md from plugin cache as rules/context
-    const pluginContext = loadPluginReadme(publisher, pluginName);
+    const pluginContext = loadPluginSkillsContent(publisher, pluginName);
 
     const meta = pluginMeta[pluginKey] || { name: pluginName, avatar: '🔌', description: `Claude Code plugin: ${pluginName}` };
     agents.push({
@@ -1003,10 +1003,10 @@ async function syncAssistantsFromClaudePlugins(configFile: any): Promise<void> {
 }
 
 /**
- * Load README.md from Claude Code plugin cache directory.
- * Searches the latest version directory for the plugin.
+ * Load all SKILL.md content from a Claude Code plugin's skills directory.
+ * Concatenates all skills into a single context string.
  */
-function loadPluginReadme(publisher: string, pluginName: string): string {
+function loadPluginSkillsContent(publisher: string, pluginName: string): string {
   try {
     const homeDir = app.getPath('home');
     const pluginCacheDir = path.join(homeDir, '.claude', 'plugins', 'cache', publisher, pluginName);
@@ -1020,10 +1020,19 @@ function loadPluginReadme(publisher: string, pluginName: string): string {
     const versionDir = versions[0];
     if (!versionDir) return '';
 
-    const readmePath = path.join(pluginCacheDir, versionDir, 'README.md');
-    if (!existsSync(readmePath)) return '';
+    const skillsDir = path.join(pluginCacheDir, versionDir, 'skills');
+    if (!existsSync(skillsDir)) return '';
 
-    return readFileSync(readmePath, 'utf-8');
+    // Read all SKILL.md files from skill subdirectories
+    const parts: string[] = [];
+    for (const entry of readdirSync(skillsDir)) {
+      const skillFile = path.join(skillsDir, entry, 'SKILL.md');
+      if (existsSync(skillFile)) {
+        parts.push(readFileSync(skillFile, 'utf-8'));
+      }
+    }
+
+    return parts.join('\n\n---\n\n');
   } catch {
     return '';
   }

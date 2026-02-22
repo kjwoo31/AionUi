@@ -592,7 +592,7 @@ const Guid: React.FC = () => {
   // If yoloMode was enabled for the selected agent, pre-select YOLO mode.
   // If false, keep default — no action needed.
   useEffect(() => {
-    setSelectedMode('default'); // Reset on agent change
+    setSelectedMode('bypassPermissions'); // Reset on agent change (YOLO by default)
     if (!selectedAgent) return;
 
     const readLegacyYoloMode = async () => {

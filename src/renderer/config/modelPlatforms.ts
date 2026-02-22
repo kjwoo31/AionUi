@@ -25,7 +25,6 @@ import KimiLogo from '@/renderer/assets/logos/kimi.svg';
 import ZhipuLogo from '@/renderer/assets/logos/zhipu.svg';
 import XaiLogo from '@/renderer/assets/logos/xai.svg';
 import VolcengineLogo from '@/renderer/assets/logos/volcengine.svg';
-import BaiduLogo from '@/renderer/assets/logos/baidu.svg';
 import TencentLogo from '@/renderer/assets/logos/tencent.svg';
 import LingyiLogo from '@/renderer/assets/logos/lingyiwanwu.svg';
 import PoeLogo from '@/renderer/assets/logos/poe.svg';
@@ -97,7 +96,6 @@ export const MODEL_PLATFORMS: PlatformConfig[] = [
   { name: 'Moonshot (Global)', value: 'Moonshot-Global', logo: KimiLogo, platform: 'custom', baseUrl: 'https://api.moonshot.ai/v1' },
   { name: 'xAI', value: 'xAI', logo: XaiLogo, platform: 'custom', baseUrl: 'https://api.x.ai/v1' },
   { name: 'Ark', value: 'Ark', logo: VolcengineLogo, platform: 'custom', baseUrl: 'https://ark.cn-beijing.volces.com/api/v3' },
-  { name: 'Qianfan', value: 'Qianfan', logo: BaiduLogo, platform: 'custom', baseUrl: 'https://qianfan.baidubce.com/v2' },
   { name: 'Hunyuan', value: 'Hunyuan', logo: TencentLogo, platform: 'custom', baseUrl: 'https://api.hunyuan.cloud.tencent.com/v1' },
   { name: 'Lingyi', value: 'Lingyi', logo: LingyiLogo, platform: 'custom', baseUrl: 'https://api.lingyiwanwu.com/v1' },
   { name: 'Poe', value: 'Poe', logo: PoeLogo, platform: 'custom', baseUrl: 'https://api.poe.com/v1' },

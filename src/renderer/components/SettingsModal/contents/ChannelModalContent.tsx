@@ -18,11 +18,9 @@ import { useTranslation } from 'react-i18next';
 import { useSettingsViewMode } from '../settingsViewContext';
 import ChannelItem from './channels/ChannelItem';
 import type { ChannelConfig } from './channels/types';
-import DingTalkConfigForm from './DingTalkConfigForm';
-import LarkConfigForm from './LarkConfigForm';
 import TelegramConfigForm from './TelegramConfigForm';
 
-type ChannelModelConfigKey = 'assistant.telegram.defaultModel' | 'assistant.lark.defaultModel' | 'assistant.dingtalk.defaultModel';
+type ChannelModelConfigKey = 'assistant.telegram.defaultModel';
 
 /**
  * Internal hook: wraps useGeminiModelSelection with ConfigStorage persistence
@@ -81,7 +79,7 @@ const useChannelModelSelection = (configKey: ChannelModelConfigKey): GeminiModel
         await ConfigStorage.set(configKey, modelRef);
 
         // Derive platform from configKey and sync to channel system
-        const platform = configKey.replace('assistant.', '').replace('.defaultModel', '') as 'telegram' | 'lark' | 'dingtalk';
+        const platform = configKey.replace('assistant.', '').replace('.defaultModel', '') as 'telegram';
         const agentKey = `assistant.${platform}.agent` as const;
         const currentAgent = await ConfigStorage.get(agentKey);
         await channel.syncChannelSettings
@@ -116,25 +114,17 @@ const ChannelModalContent: React.FC = () => {
 
   // Plugin state
   const [pluginStatus, setPluginStatus] = useState<IChannelPluginStatus | null>(null);
-  const [larkPluginStatus, setLarkPluginStatus] = useState<IChannelPluginStatus | null>(null);
-  const [dingtalkPluginStatus, setDingtalkPluginStatus] = useState<IChannelPluginStatus | null>(null);
   const [enableLoading, setEnableLoading] = useState(false);
-  const [larkEnableLoading, setLarkEnableLoading] = useState(false);
-  const [dingtalkEnableLoading, setDingtalkEnableLoading] = useState(false);
 
   // Collapse state - true means collapsed (closed), false means expanded (open)
   const [collapseKeys, setCollapseKeys] = useState<Record<string, boolean>>({
     telegram: true, // Default to collapsed
     slack: true,
     discord: true,
-    lark: true,
-    dingtalk: true,
   });
 
   // Model selection state — uses unified hook with ConfigStorage persistence
   const telegramModelSelection = useChannelModelSelection('assistant.telegram.defaultModel');
-  const larkModelSelection = useChannelModelSelection('assistant.lark.defaultModel');
-  const dingtalkModelSelection = useChannelModelSelection('assistant.dingtalk.defaultModel');
 
   // Load plugin status
   const loadPluginStatus = useCallback(async () => {
@@ -142,11 +132,7 @@ const ChannelModalContent: React.FC = () => {
       const result = await channel.getPluginStatus.invoke();
       if (result.success && result.data) {
         const telegramPlugin = result.data.find((p) => p.type === 'telegram');
-        const larkPlugin = result.data.find((p) => p.type === 'lark');
-        const dingtalkPlugin = result.data.find((p) => p.type === 'dingtalk');
         setPluginStatus(telegramPlugin || null);
-        setLarkPluginStatus(larkPlugin || null);
-        setDingtalkPluginStatus(dingtalkPlugin || null);
       }
     } catch (error) {
       console.error('[ChannelSettings] Failed to load plugin status:', error);
@@ -163,10 +149,6 @@ const ChannelModalContent: React.FC = () => {
     const unsubscribe = channel.pluginStatusChanged.on(({ status }) => {
       if (status.type === 'telegram') {
         setPluginStatus(status);
-      } else if (status.type === 'lark') {
-        setLarkPluginStatus(status);
-      } else if (status.type === 'dingtalk') {
-        setDingtalkPluginStatus(status);
       }
     });
     return () => unsubscribe();
@@ -220,85 +202,6 @@ const ChannelModalContent: React.FC = () => {
     }
   };
 
-  // Enable/Disable Lark plugin
-  const handleToggleLarkPlugin = async (enabled: boolean) => {
-    setLarkEnableLoading(true);
-    try {
-      if (enabled) {
-        // Check if we have credentials - already saved in database
-        if (!larkPluginStatus?.hasToken) {
-          Message.warning(t('settings.lark.credentialsRequired', 'Please configure Lark credentials first'));
-          setLarkEnableLoading(false);
-          return;
-        }
-
-        const result = await channel.enablePlugin.invoke({
-          pluginId: 'lark_default',
-          config: {},
-        });
-
-        if (result.success) {
-          Message.success(t('settings.lark.pluginEnabled', 'Lark bot enabled'));
-          await loadPluginStatus();
-        } else {
-          Message.error(result.msg || t('settings.lark.enableFailed', 'Failed to enable Lark plugin'));
-        }
-      } else {
-        const result = await channel.disablePlugin.invoke({ pluginId: 'lark_default' });
-
-        if (result.success) {
-          Message.success(t('settings.lark.pluginDisabled', 'Lark bot disabled'));
-          await loadPluginStatus();
-        } else {
-          Message.error(result.msg || t('settings.lark.disableFailed', 'Failed to disable Lark plugin'));
-        }
-      }
-    } catch (error: any) {
-      Message.error(error.message);
-    } finally {
-      setLarkEnableLoading(false);
-    }
-  };
-
-  // Enable/Disable DingTalk plugin
-  const handleToggleDingtalkPlugin = async (enabled: boolean) => {
-    setDingtalkEnableLoading(true);
-    try {
-      if (enabled) {
-        if (!dingtalkPluginStatus?.hasToken) {
-          Message.warning(t('settings.dingtalk.credentialsRequired', 'Please configure DingTalk credentials first'));
-          setDingtalkEnableLoading(false);
-          return;
-        }
-
-        const result = await channel.enablePlugin.invoke({
-          pluginId: 'dingtalk_default',
-          config: {},
-        });
-
-        if (result.success) {
-          Message.success(t('settings.dingtalk.pluginEnabled', 'DingTalk bot enabled'));
-          await loadPluginStatus();
-        } else {
-          Message.error(result.msg || t('settings.dingtalk.enableFailed', 'Failed to enable DingTalk plugin'));
-        }
-      } else {
-        const result = await channel.disablePlugin.invoke({ pluginId: 'dingtalk_default' });
-
-        if (result.success) {
-          Message.success(t('settings.dingtalk.pluginDisabled', 'DingTalk bot disabled'));
-          await loadPluginStatus();
-        } else {
-          Message.error(result.msg || t('settings.dingtalk.disableFailed', 'Failed to disable DingTalk plugin'));
-        }
-      }
-    } catch (error: any) {
-      Message.error(error.message);
-    } finally {
-      setDingtalkEnableLoading(false);
-    }
-  };
-
   // Build channel configurations
   const channels: ChannelConfig[] = useMemo(() => {
     const telegramChannel: ChannelConfig = {
@@ -312,30 +215,6 @@ const ChannelModalContent: React.FC = () => {
       botUsername: pluginStatus?.botUsername,
       defaultModel: telegramModelSelection.currentModel?.useModel,
       content: <TelegramConfigForm pluginStatus={pluginStatus} modelSelection={telegramModelSelection} onStatusChange={setPluginStatus} />,
-    };
-
-    const larkChannel: ChannelConfig = {
-      id: 'lark',
-      title: t('channels.larkTitle', 'Lark / Feishu'),
-      description: t('channels.larkDesc', 'Chat with AionUi assistant via Lark or Feishu'),
-      status: 'active',
-      enabled: larkPluginStatus?.enabled || false,
-      disabled: larkEnableLoading,
-      isConnected: larkPluginStatus?.connected || false,
-      defaultModel: larkModelSelection.currentModel?.useModel,
-      content: <LarkConfigForm pluginStatus={larkPluginStatus} modelSelection={larkModelSelection} onStatusChange={setLarkPluginStatus} />,
-    };
-
-    const dingtalkChannel: ChannelConfig = {
-      id: 'dingtalk',
-      title: t('channels.dingtalkTitle', 'DingTalk'),
-      description: t('channels.dingtalkDesc', 'Chat with AionUi assistant via DingTalk'),
-      status: 'active',
-      enabled: dingtalkPluginStatus?.enabled || false,
-      disabled: dingtalkEnableLoading,
-      isConnected: dingtalkPluginStatus?.connected || false,
-      defaultModel: dingtalkModelSelection.currentModel?.useModel,
-      content: <DingTalkConfigForm pluginStatus={dingtalkPluginStatus} modelSelection={dingtalkModelSelection} onStatusChange={setDingtalkPluginStatus} />,
     };
 
     const comingSoonChannels: ChannelConfig[] = [
@@ -359,14 +238,12 @@ const ChannelModalContent: React.FC = () => {
       },
     ];
 
-    return [telegramChannel, larkChannel, dingtalkChannel, ...comingSoonChannels];
-  }, [pluginStatus, larkPluginStatus, dingtalkPluginStatus, telegramModelSelection, larkModelSelection, dingtalkModelSelection, enableLoading, larkEnableLoading, dingtalkEnableLoading, t]);
+    return [telegramChannel, ...comingSoonChannels];
+  }, [pluginStatus, telegramModelSelection, enableLoading, t]);
 
   // Get toggle handler for each channel
   const getToggleHandler = (channelId: string) => {
     if (channelId === 'telegram') return handleTogglePlugin;
-    if (channelId === 'lark') return handleToggleLarkPlugin;
-    if (channelId === 'dingtalk') return handleToggleDingtalkPlugin;
     return undefined;
   };
 

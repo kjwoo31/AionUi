@@ -9,7 +9,7 @@
 /**
  * Supported platform types for plugins
  */
-export type PluginType = 'telegram' | 'slack' | 'discord' | 'lark' | 'dingtalk';
+export type PluginType = 'telegram' | 'slack' | 'discord';
 
 /**
  * Plugin connection status
@@ -22,14 +22,6 @@ export type PluginStatus = 'created' | 'initializing' | 'ready' | 'starting' | '
 export interface IPluginCredentials {
   // Telegram
   token?: string;
-  // Lark/Feishu
-  appId?: string;
-  appSecret?: string;
-  encryptKey?: string;
-  verificationToken?: string;
-  // DingTalk
-  clientId?: string;
-  clientSecret?: string;
 }
 
 /**
@@ -38,8 +30,6 @@ export interface IPluginCredentials {
  */
 export function hasPluginCredentials(type: PluginType, credentials?: IPluginCredentials): boolean {
   if (!credentials) return false;
-  if (type === 'lark') return !!(credentials.appId && credentials.appSecret);
-  if (type === 'dingtalk') return !!(credentials.clientId && credentials.clientSecret);
   return !!credentials.token;
 }
 
@@ -457,13 +447,13 @@ export function pairingRequestToRow(request: IChannelPairingRequest): IChannelPa
  * Channel platform type for model configuration.
  * Subset of PluginType that currently supports channel conversations.
  */
-export type ChannelPlatform = 'telegram' | 'lark' | 'dingtalk';
+export type ChannelPlatform = 'telegram';
 
 /**
  * Type guard to check if a string is a valid ChannelPlatform
  */
 export function isChannelPlatform(value: string): value is ChannelPlatform {
-  return value === 'telegram' || value === 'lark' || value === 'dingtalk';
+  return value === 'telegram';
 }
 
 /**
@@ -486,7 +476,7 @@ export function resolveChannelConvType(backend: string): { convType: string; con
  * - empty segments are omitted
  */
 export function getChannelConversationName(platform: ChannelPlatform | PluginType, type?: string, backend?: string, chatId?: string): string {
-  const shortPlatform: Record<string, string> = { telegram: 'tg', dingtalk: 'ding' };
+  const shortPlatform: Record<string, string> = { telegram: 'tg' };
   const parts: string[] = [shortPlatform[platform] ?? platform];
   if (type) parts.push(type);
   if (type === 'acp' && backend) parts.push(backend);

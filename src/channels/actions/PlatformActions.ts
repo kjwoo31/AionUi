@@ -8,13 +8,10 @@ import type { IActionContext, IActionResult, IRegisteredAction, ActionHandler } 
 import { PlatformActionNames, createSuccessResponse, createErrorResponse } from './types';
 import { getPairingService } from '../pairing/PairingService';
 import { createPairingCodeKeyboard, createPairingStatusKeyboard, createMainMenuKeyboard } from '../plugins/telegram/TelegramKeyboards';
-import { createPairingCard, createPairingStatusCard, createMainMenuCard, createPairingHelpCard } from '../plugins/lark/LarkCards';
-import { createMainMenuCard as createDingTalkMainMenuCard, createPairingCard as createDingTalkPairingCard, createPairingStatusCard as createDingTalkPairingStatusCard, createPairingHelpCard as createDingTalkPairingHelpCard } from '../plugins/dingtalk/DingTalkCards';
 
 /**
  * PlatformActions - Handlers for platform-specific actions
  *
- * Supports both Telegram and Lark platforms with platform-specific UI components.
  * These actions are handled by the plugin itself, not through the Gateway.
  */
 
@@ -24,12 +21,6 @@ import { createMainMenuCard as createDingTalkMainMenuCard, createPairingCard as 
  * Get main menu markup based on platform
  */
 function getMainMenuMarkup(platform: string) {
-  if (platform === 'lark') {
-    return createMainMenuCard();
-  }
-  if (platform === 'dingtalk') {
-    return createDingTalkMainMenuCard();
-  }
   return createMainMenuKeyboard();
 }
 
@@ -37,12 +28,6 @@ function getMainMenuMarkup(platform: string) {
  * Get pairing code markup based on platform
  */
 function getPairingCodeMarkup(platform: string, code: string) {
-  if (platform === 'lark') {
-    return createPairingCard(code);
-  }
-  if (platform === 'dingtalk') {
-    return createDingTalkPairingCard(code);
-  }
   return createPairingCodeKeyboard();
 }
 
@@ -50,12 +35,6 @@ function getPairingCodeMarkup(platform: string, code: string) {
  * Get pairing status markup based on platform
  */
 function getPairingStatusMarkup(platform: string, code: string) {
-  if (platform === 'lark') {
-    return createPairingStatusCard(code);
-  }
-  if (platform === 'dingtalk') {
-    return createDingTalkPairingStatusCard(code);
-  }
   return createPairingStatusKeyboard();
 }
 
@@ -63,12 +42,6 @@ function getPairingStatusMarkup(platform: string, code: string) {
  * Get pairing help markup based on platform
  */
 function getPairingHelpMarkup(platform: string) {
-  if (platform === 'lark') {
-    return createPairingHelpCard();
-  }
-  if (platform === 'dingtalk') {
-    return createDingTalkPairingHelpCard();
-  }
   return createPairingCodeKeyboard();
 }
 
@@ -181,7 +154,7 @@ export const handlePairingCheck: ActionHandler = async (context) => {
  */
 export const handlePairingHelp: ActionHandler = async (context) => {
   const platform = context.platform;
-  const platformName = platform === 'lark' ? 'Lark/Feishu' : platform === 'dingtalk' ? 'DingTalk' : 'Telegram';
+  const platformName = 'Telegram';
 
   return createSuccessResponse({
     type: 'text',

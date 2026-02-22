@@ -83,28 +83,6 @@ export interface IConfigStorageRefer {
     customAgentId?: string;
     name?: string;
   };
-  // Lark assistant default model / Lark 助手默认模型
-  'assistant.lark.defaultModel'?: {
-    id: string;
-    useModel: string;
-  };
-  // Lark assistant agent selection / Lark 助手所使用的 Agent
-  'assistant.lark.agent'?: {
-    backend: AcpBackendAll;
-    customAgentId?: string;
-    name?: string;
-  };
-  // DingTalk assistant default model / DingTalk 助手默认模型
-  'assistant.dingtalk.defaultModel'?: {
-    id: string;
-    useModel: string;
-  };
-  // DingTalk assistant agent selection / DingTalk 助手所使用的 Agent
-  'assistant.dingtalk.agent'?: {
-    backend: AcpBackendAll;
-    customAgentId?: string;
-    name?: string;
-  };
 }
 
 export interface IEnvStorageRefer {
@@ -118,7 +96,7 @@ export interface IEnvStorageRefer {
  * Conversation source type - identifies where the conversation was created
  * 会话来源类型 - 标识会话创建的来源
  */
-export type ConversationSource = 'aionui' | 'telegram' | 'lark' | 'dingtalk';
+export type ConversationSource = 'aionui' | 'telegram';
 
 interface IChatConversation<T, Extra> {
   createTime: number;

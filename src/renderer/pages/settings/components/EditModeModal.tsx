@@ -21,7 +21,6 @@ import KimiLogo from '@/renderer/assets/logos/kimi.svg';
 import ZhipuLogo from '@/renderer/assets/logos/zhipu.svg';
 import XaiLogo from '@/renderer/assets/logos/xai.svg';
 import VolcengineLogo from '@/renderer/assets/logos/volcengine.svg';
-import BaiduLogo from '@/renderer/assets/logos/baidu.svg';
 import TencentLogo from '@/renderer/assets/logos/tencent.svg';
 import LingyiLogo from '@/renderer/assets/logos/lingyiwanwu.svg';
 import PoeLogo from '@/renderer/assets/logos/poe.svg';
@@ -52,7 +51,6 @@ const PROVIDER_CONFIGS = [
   { name: 'Zhipu', url: 'https://open.bigmodel.cn/api/paas/v4', logo: ZhipuLogo },
   { name: 'xAI', url: 'https://api.x.ai/v1', logo: XaiLogo },
   { name: 'Ark', url: 'https://ark.cn-beijing.volces.com/api/v3', logo: VolcengineLogo },
-  { name: 'Qianfan', url: 'https://qianfan.baidubce.com/v2', logo: BaiduLogo },
   { name: 'Hunyuan', url: 'https://api.hunyuan.cloud.tencent.com/v1', logo: TencentLogo },
   { name: 'Lingyi', url: 'https://api.lingyiwanwu.com/v1', logo: LingyiLogo },
   { name: 'Poe', url: 'https://api.poe.com/v1', logo: PoeLogo },

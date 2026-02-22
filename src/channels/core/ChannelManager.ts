@@ -10,8 +10,6 @@ import { getChannelDefaultModel } from '../actions/SystemActions';
 import { ActionExecutor } from '../gateway/ActionExecutor';
 import { PluginManager, registerPlugin } from '../gateway/PluginManager';
 import { PairingService } from '../pairing/PairingService';
-import { DingTalkPlugin } from '../plugins/dingtalk/DingTalkPlugin';
-import { LarkPlugin } from '../plugins/lark/LarkPlugin';
 import { TelegramPlugin } from '../plugins/telegram/TelegramPlugin';
 import { resolveChannelConvType } from '../types';
 import type { IChannelPluginConfig, PluginType } from '../types';
@@ -47,8 +45,6 @@ export class ChannelManager {
     // Private constructor for singleton pattern
     // Register available plugins
     registerPlugin('telegram', TelegramPlugin);
-    registerPlugin('lark', LarkPlugin);
-    registerPlugin('dingtalk', DingTalkPlugin);
   }
 
   /**
@@ -223,20 +219,6 @@ export class ChannelManager {
       if (token) {
         credentials = { token };
       }
-    } else if (pluginType === 'lark') {
-      const appId = config.appId as string | undefined;
-      const appSecret = config.appSecret as string | undefined;
-      const encryptKey = config.encryptKey as string | undefined;
-      const verificationToken = config.verificationToken as string | undefined;
-      if (appId && appSecret) {
-        credentials = { appId, appSecret, encryptKey, verificationToken };
-      }
-    } else if (pluginType === 'dingtalk') {
-      const clientId = config.clientId as string | undefined;
-      const clientSecret = config.clientSecret as string | undefined;
-      if (clientId && clientSecret) {
-        credentials = { clientId, clientSecret };
-      }
     }
 
     const pluginConfig: IChannelPluginConfig = {
@@ -295,7 +277,7 @@ export class ChannelManager {
   /**
    * Test a plugin connection without enabling it
    */
-  async testPlugin(pluginId: string, token: string, extraConfig?: { appId?: string; appSecret?: string }): Promise<{ success: boolean; botUsername?: string; error?: string }> {
+  async testPlugin(pluginId: string, token: string): Promise<{ success: boolean; botUsername?: string; error?: string }> {
     const pluginType = this.getPluginTypeFromId(pluginId);
 
     if (pluginType === 'telegram') {
@@ -303,34 +285,6 @@ export class ChannelManager {
       return {
         success: result.success,
         botUsername: result.botInfo?.username,
-        error: result.error,
-      };
-    }
-
-    if (pluginType === 'lark') {
-      const appId = extraConfig?.appId;
-      const appSecret = extraConfig?.appSecret;
-      if (!appId || !appSecret) {
-        return { success: false, error: 'App ID and App Secret are required for Lark' };
-      }
-      const result = await LarkPlugin.testConnection(appId, appSecret);
-      return {
-        success: result.success,
-        botUsername: result.botInfo?.name,
-        error: result.error,
-      };
-    }
-
-    if (pluginType === 'dingtalk') {
-      const clientId = extraConfig?.appId; // Reuse appId field for clientId
-      const clientSecret = extraConfig?.appSecret; // Reuse appSecret field for clientSecret
-      if (!clientId || !clientSecret) {
-        return { success: false, error: 'Client ID and Client Secret are required for DingTalk' };
-      }
-      const result = await DingTalkPlugin.testConnection(clientId, clientSecret);
-      return {
-        success: result.success,
-        botUsername: result.botInfo?.name,
         error: result.error,
       };
     }
@@ -345,8 +299,6 @@ export class ChannelManager {
     if (pluginId.startsWith('telegram')) return 'telegram';
     if (pluginId.startsWith('slack')) return 'slack';
     if (pluginId.startsWith('discord')) return 'discord';
-    if (pluginId.startsWith('lark')) return 'lark';
-    if (pluginId.startsWith('dingtalk')) return 'dingtalk';
     return 'telegram'; // Default
   }
 
@@ -366,7 +318,7 @@ export class ChannelManager {
    * which conversation to use. For gemini type changes, also updates the
    * model field on existing conversations.
    */
-  async syncChannelSettings(platform: 'telegram' | 'lark' | 'dingtalk', agent: { backend: string; customAgentId?: string; name?: string }, model?: { id: string; useModel: string }): Promise<{ success: boolean; error?: string }> {
+  async syncChannelSettings(platform: 'telegram', agent: { backend: string; customAgentId?: string; name?: string }, model?: { id: string; useModel: string }): Promise<{ success: boolean; error?: string }> {
     if (!this.initialized || !this.sessionManager) {
       return { success: false, error: 'Channel manager not initialized' };
     }

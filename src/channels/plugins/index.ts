@@ -11,6 +11,3 @@ export type { PluginMessageHandler } from './BasePlugin';
 export { TelegramPlugin } from './telegram/TelegramPlugin';
 export * from './telegram/TelegramAdapter';
 export * from './telegram/TelegramKeyboards';
-
-// DingTalk plugin
-export { DingTalkPlugin } from './dingtalk/DingTalkPlugin';

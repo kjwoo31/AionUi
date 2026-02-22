@@ -17,10 +17,6 @@ import type { SessionManager } from '../core/SessionManager';
 import type { PairingService } from '../pairing/PairingService';
 import type { PluginMessageHandler } from '../plugins/BasePlugin';
 import { getChannelConversationName, resolveChannelConvType } from '../types';
-import { createMainMenuCard, createErrorRecoveryCard, createToolConfirmationCard } from '../plugins/lark/LarkCards';
-import { convertHtmlToLarkMarkdown } from '../plugins/lark/LarkAdapter';
-import { createMainMenuCard as createDingTalkMainMenuCard, createErrorRecoveryCard as createDingTalkErrorRecoveryCard, createResponseActionsCard as createDingTalkResponseActionsCard, createToolConfirmationCard as createDingTalkToolConfirmationCard } from '../plugins/dingtalk/DingTalkCards';
-import { convertHtmlToDingTalkMarkdown } from '../plugins/dingtalk/DingTalkAdapter';
 import { createMainMenuKeyboard, createToolConfirmationKeyboard } from '../plugins/telegram/TelegramKeyboards';
 import { escapeHtml } from '../plugins/telegram/TelegramAdapter';
 import type { ChannelAgentType, IUnifiedIncomingMessage, IUnifiedOutgoingMessage, PluginType } from '../types';
@@ -33,23 +29,13 @@ import type { AcpBackend } from '@/types/acpTypes';
  * Get main menu reply markup based on platform
  */
 function getMainMenuMarkup(platform: PluginType) {
-  if (platform === 'lark') {
-    return createMainMenuCard();
-  }
-  if (platform === 'dingtalk') {
-    return createDingTalkMainMenuCard();
-  }
   return createMainMenuKeyboard();
 }
 
 /**
  * Get response actions markup based on platform
  */
-function getResponseActionsMarkup(platform: PluginType, text?: string) {
-  if (platform === 'dingtalk') {
-    return createDingTalkResponseActionsCard(text || '');
-  }
-  // Telegram and Lark: no response action buttons
+function getResponseActionsMarkup(_platform: PluginType, _text?: string): undefined {
   return undefined;
 }
 
@@ -57,12 +43,6 @@ function getResponseActionsMarkup(platform: PluginType, text?: string) {
  * Get tool confirmation markup based on platform
  */
 function getToolConfirmationMarkup(platform: PluginType, callId: string, options: Array<{ label: string; value: string }>, title?: string, description?: string) {
-  if (platform === 'lark') {
-    return createToolConfirmationCard(callId, title || 'Confirmation', description || 'Please confirm', options);
-  }
-  if (platform === 'dingtalk') {
-    return createDingTalkToolConfirmationCard(callId, title || 'Confirmation', description || 'Please confirm', options);
-  }
   return createToolConfirmationKeyboard(callId, options);
 }
 
@@ -70,25 +50,13 @@ function getToolConfirmationMarkup(platform: PluginType, callId: string, options
  * Get error recovery markup based on platform
  */
 function getErrorRecoveryMarkup(platform: PluginType, errorMessage?: string) {
-  if (platform === 'lark') {
-    return createErrorRecoveryCard(errorMessage);
-  }
-  if (platform === 'dingtalk') {
-    return createDingTalkErrorRecoveryCard(errorMessage);
-  }
-  return createMainMenuKeyboard(); // Telegram uses main menu for recovery
+  return createMainMenuKeyboard();
 }
 
 /**
  * Escape/format text for platform
  */
 function formatTextForPlatform(text: string, platform: PluginType): string {
-  if (platform === 'lark') {
-    return convertHtmlToLarkMarkdown(text);
-  }
-  if (platform === 'dingtalk') {
-    return convertHtmlToDingTalkMarkdown(text);
-  }
   return escapeHtml(text);
 }
 
@@ -222,7 +190,7 @@ function convertTMessageToOutgoing(message: TMessage, platform: PluginType, isCo
 
     case 'acp_permission':
     case 'codex_permission': {
-      // Channels (Telegram/Lark) use automatic approval via yoloMode.
+      // Channels use automatic approval via yoloMode.
       // Show a subtle indicator instead of an error message.
       return {
         type: 'text',
@@ -344,12 +312,12 @@ export class ActionExecutor {
       // Get or create session (scoped by chatId for per-chat isolation)
       let session = this.sessionManager.getSession(channelUser.id, chatId);
       if (!session || !session.conversationId) {
-        const source = platform === 'lark' ? 'lark' : platform === 'dingtalk' ? 'dingtalk' : 'telegram';
+        const source = 'telegram';
 
         // Read selected agent for this platform (defaults to Gemini)
         let savedAgent: unknown = undefined;
         try {
-          savedAgent = await (platform === 'lark' ? ProcessConfig.get('assistant.lark.agent') : platform === 'dingtalk' ? ProcessConfig.get('assistant.dingtalk.agent') : ProcessConfig.get('assistant.telegram.agent'));
+          savedAgent = await ProcessConfig.get('assistant.telegram.agent');
         } catch {
           // ignore
         }
@@ -550,8 +518,6 @@ export class ActionExecutor {
         const outgoingMessage = convertTMessageToOutgoing(message, context.platform as PluginType, false);
 
         // Strip replyMarkup during streaming to prevent premature card finalization.
-        // Tool confirmation cards set replyMarkup (e.g., for Confirming status),
-        // but DingTalk interprets replyMarkup as "stream complete" and finishes the AI Card.
         // Channel conversations use yoloMode (auto-approve), so confirmation buttons are unnecessary.
         const streamOutgoing: IUnifiedOutgoingMessage = { ...outgoingMessage, replyMarkup: undefined };
 

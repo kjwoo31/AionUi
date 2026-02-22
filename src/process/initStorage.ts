@@ -920,8 +920,9 @@ async function syncMcpFromClaudeCode(configFile: any): Promise<void> {
 }
 
 /**
- * Auto-enable AionUi assistant presets that match Claude Code's enabledPlugins.
- * Maps plugin names to AionUi preset IDs and enables matching assistants.
+ * Sync Claude Code enabledPlugins to AionUi assistants.
+ * - Matching presets are auto-enabled
+ * - Non-matching plugins are added as new assistant entries
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function syncAssistantsFromClaudePlugins(configFile: any): Promise<void> {
@@ -929,30 +930,55 @@ async function syncAssistantsFromClaudePlugins(configFile: any): Promise<void> {
   const settings = readClaudeSettings();
   if (!settings?.enabledPlugins) return;
 
-  // Map Claude Code plugin keys to AionUi preset IDs
-  // Plugin key format: "pluginName@publisher"
+  // Map plugin keys to AionUi preset IDs (for plugins that have matching presets)
   const pluginToPreset: Record<string, string> = {
     'ui-ux-pro-max@ui-ux-pro-max-skill': 'ui-ux-pro-max',
   };
 
-  const enabledPresetIds = new Set<string>();
-  for (const [pluginKey, enabled] of Object.entries(settings.enabledPlugins)) {
-    if (enabled && pluginToPreset[pluginKey]) {
-      enabledPresetIds.add(pluginToPreset[pluginKey]);
-    }
-  }
-
-  if (enabledPresetIds.size === 0) return;
+  // Plugin display names and emoji avatars
+  const pluginMeta: Record<string, { name: string; avatar: string; description: string }> = {
+    'everything-claude-code@everything-claude-code': { name: 'Everything Claude Code', avatar: '🔧', description: 'TDD, debugging, code review, security review, and strategic development workflows' },
+    'superpowers@claude-plugins-official': { name: 'Superpowers', avatar: '⚡', description: 'Brainstorming, planning, systematic debugging, and test-driven development skills' },
+    'claude-mem@thedotmack': { name: 'Claude Memory', avatar: '🧠', description: 'Persistent cross-session memory for recalling previous work and decisions' },
+  };
 
   const agents = ((await configFile.get('acp.customAgents').catch((): AcpBackendConfig[] => [])) || []) as AcpBackendConfig[];
+  const existingIds = new Set(agents.map((a: AcpBackendConfig) => a.id));
   let changed = false;
 
-  for (const agent of agents) {
-    if (agent.isBuiltin && enabledPresetIds.has(agent.id.replace('builtin-', '')) && !agent.enabled) {
-      agent.enabled = true;
-      changed = true;
-      console.log(`[AionUi] Auto-enabled assistant "${agent.name}" (matched Claude Code plugin)`);
+  for (const [pluginKey, enabled] of Object.entries(settings.enabledPlugins)) {
+    if (!enabled) continue;
+
+    // Check if plugin maps to an existing preset → auto-enable
+    const presetId = pluginToPreset[pluginKey];
+    if (presetId) {
+      const agent = agents.find((a: AcpBackendConfig) => a.id === `builtin-${presetId}` && !a.enabled);
+      if (agent) {
+        agent.enabled = true;
+        changed = true;
+        console.log(`[AionUi] Auto-enabled assistant "${agent.name}" (matched Claude Code plugin)`);
+      }
+      continue;
     }
+
+    // No matching preset → create a new assistant entry for this plugin
+    const pluginName = pluginKey.split('@')[0];
+    const pluginId = `plugin-${pluginName}`;
+    if (existingIds.has(pluginId)) continue;
+
+    const meta = pluginMeta[pluginKey] || { name: pluginName, avatar: '🔌', description: `Claude Code plugin: ${pluginName}` };
+    agents.push({
+      id: pluginId,
+      name: meta.name,
+      description: meta.description,
+      avatar: meta.avatar,
+      enabled: true,
+      isPreset: false,
+      isBuiltin: false,
+    } as AcpBackendConfig);
+    existingIds.add(pluginId);
+    changed = true;
+    console.log(`[AionUi] Added assistant "${meta.name}" from Claude Code plugin`);
   }
 
   if (changed) {

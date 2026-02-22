@@ -35,15 +35,15 @@ export interface AgentModeOption {
  */
 export const AGENT_MODES: Record<string, AgentModeOption[]> = {
   claude: [
+    { value: 'bypassPermissions', label: 'YOLO' },
     { value: 'default', label: 'Default' },
     { value: 'plan', label: 'Plan' },
-    { value: 'bypassPermissions', label: 'YOLO' },
   ],
   // Custom agents (preset assistants using Claude backend) share Claude's modes
   custom: [
+    { value: 'bypassPermissions', label: 'YOLO' },
     { value: 'default', label: 'Default' },
     { value: 'plan', label: 'Plan' },
-    { value: 'bypassPermissions', label: 'YOLO' },
   ],
   // Qwen: ACP session/set_mode returns success but does not enforce plan mode behavior.
   // Plan mode disabled until upstream fix. See https://github.com/QwenLM/qwen-code/issues/1806

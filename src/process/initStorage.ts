@@ -727,6 +727,13 @@ const initStorage = async () => {
     if (needsPromptsI18nMigration) {
       await configFile.set(PROMPTS_I18N_MIGRATION_KEY, true);
     }
+
+    // 5.3 Auto-enable AionUi assistants that match Claude Code enabledPlugins
+    try {
+      await syncAssistantsFromClaudePlugins(configFile);
+    } catch (error) {
+      console.warn('[AionUi] Failed to sync assistants from Claude plugins:', error);
+    }
   } catch (error) {
     console.error('[AionUi] Failed to initialize builtin assistants:', error);
   }
@@ -909,6 +916,47 @@ async function syncMcpFromClaudeCode(configFile: any): Promise<void> {
   if (newServers.length > 0) {
     await configFile.set('mcp.config', [...existing, ...newServers]);
     console.log(`[AionUi] Auto-imported ${newServers.length} MCP server(s) from Claude Code: ${newServers.map((s) => s.name).join(', ')}`);
+  }
+}
+
+/**
+ * Auto-enable AionUi assistant presets that match Claude Code's enabledPlugins.
+ * Maps plugin names to AionUi preset IDs and enables matching assistants.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function syncAssistantsFromClaudePlugins(configFile: any): Promise<void> {
+  const { readClaudeSettings } = await import('@/agent/acp/utils');
+  const settings = readClaudeSettings();
+  if (!settings?.enabledPlugins) return;
+
+  // Map Claude Code plugin keys to AionUi preset IDs
+  // Plugin key format: "pluginName@publisher"
+  const pluginToPreset: Record<string, string> = {
+    'ui-ux-pro-max@ui-ux-pro-max-skill': 'ui-ux-pro-max',
+  };
+
+  const enabledPresetIds = new Set<string>();
+  for (const [pluginKey, enabled] of Object.entries(settings.enabledPlugins)) {
+    if (enabled && pluginToPreset[pluginKey]) {
+      enabledPresetIds.add(pluginToPreset[pluginKey]);
+    }
+  }
+
+  if (enabledPresetIds.size === 0) return;
+
+  const agents = ((await configFile.get('acp.customAgents').catch((): AcpBackendConfig[] => [])) || []) as AcpBackendConfig[];
+  let changed = false;
+
+  for (const agent of agents) {
+    if (agent.isBuiltin && enabledPresetIds.has(agent.id.replace('builtin-', '')) && !agent.enabled) {
+      agent.enabled = true;
+      changed = true;
+      console.log(`[AionUi] Auto-enabled assistant "${agent.name}" (matched Claude Code plugin)`);
+    }
+  }
+
+  if (changed) {
+    await configFile.set('acp.customAgents', agents);
   }
 }
 

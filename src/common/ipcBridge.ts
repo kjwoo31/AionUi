@@ -216,7 +216,7 @@ export const acpConversation = {
   // Set model for ACP agents
   // 设置 ACP 代理的模型
   setModel: bridge.buildProvider<IBridgeResponse<{ modelInfo: AcpModelInfo | null }>, { conversationId: string; modelId: string }>('acp.set-model'),
-  getClaudeSettings: bridge.buildProvider<IBridgeResponse<{ model: string | null; defaultMode: string | null }>, void>('acp.get-claude-settings'),
+  getClaudeSettings: bridge.buildProvider<IBridgeResponse<{ model: string | null; defaultMode: string | null; enabledPlugins: string[] }>, void>('acp.get-claude-settings'),
 };
 
 // MCP 服务相关接口

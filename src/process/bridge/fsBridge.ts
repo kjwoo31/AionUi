@@ -719,20 +719,22 @@ export function initFsBridge(): void {
   // 读取助手规则文件 / Read assistant rule file from user directory or builtin rules
   // Falls back to assistant's context field in config (for plugin-generated assistants)
   ipcBridge.fs.readAssistantRule.provider(async ({ assistantId, locale = 'en-US' }) => {
+    // Try file-based rules first
+    const fileContent = await readAssistantResource('rules', assistantId, locale, ruleFilePattern);
+    if (fileContent) return fileContent;
+
+    // Fallback: read context from config (plugin-generated assistants store context in config)
     try {
-      const content = await readAssistantResource('rules', assistantId, locale, ruleFilePattern);
-      if (content) return content;
-    } catch {
-      // File not found — fall through to config fallback
-    }
-    // Fallback: read context from config (plugin-generated assistants store context in DB)
-    try {
-      const agents: Array<{ id: string; context?: string }> = (await ConfigStorage.get('acp.customAgents')) || [];
+      const agents = ((await ConfigStorage.get('acp.customAgents')) || []) as Array<{ id: string; context?: string }>;
       const agent = agents.find((a) => a.id === assistantId);
-      return agent?.context || '';
-    } catch {
-      return '';
+      if (agent?.context) {
+        console.log(`[fsBridge] Loaded rules from config for ${assistantId} (${agent.context.length} chars)`);
+        return agent.context;
+      }
+    } catch (error) {
+      console.warn(`[fsBridge] Failed to load config fallback for ${assistantId}:`, error);
     }
+    return '';
   });
 
   // 写入助手规则文件 / Write assistant rule file to user directory

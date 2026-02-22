@@ -198,10 +198,14 @@ export function initAcpConversationBridge(): void {
       if (task && (task instanceof AcpAgentManager || task instanceof GeminiAgentManager || task instanceof CodexAgentManager)) {
         return { success: true, data: task.getMode() };
       }
-      // Fallback: read sessionMode from conversation in database
+      // Fallback: read sessionMode from conversation DB, then from ~/.claude/settings.json
       const db = (await import('@/process/database')).getDatabase();
       const conv = db.getConversation(conversationId);
-      const savedMode = (conv?.data as any)?.extra?.sessionMode || 'default';
+      let savedMode = (conv?.data as any)?.extra?.sessionMode;
+      if (!savedMode) {
+        const { getClaudeDefaultMode } = await import('@/agent/acp/utils');
+        savedMode = getClaudeDefaultMode() || 'default';
+      }
       return { success: true, data: { mode: savedMode, initialized: false } };
     } catch {
       return { success: true, data: { mode: 'default', initialized: false } };

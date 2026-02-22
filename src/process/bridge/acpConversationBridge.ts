@@ -195,10 +195,14 @@ export function initAcpConversationBridge(): void {
   ipcBridge.acpConversation.getMode.provider(async ({ conversationId }) => {
     try {
       const task = await WorkerManage.getTaskByIdRollbackBuild(conversationId);
-      if (!task || !(task instanceof AcpAgentManager || task instanceof GeminiAgentManager || task instanceof CodexAgentManager)) {
-        return { success: true, data: { mode: 'default', initialized: false } };
+      if (task && (task instanceof AcpAgentManager || task instanceof GeminiAgentManager || task instanceof CodexAgentManager)) {
+        return { success: true, data: task.getMode() };
       }
-      return { success: true, data: task.getMode() };
+      // Fallback: read sessionMode from conversation in database
+      const db = (await import('@/process/database')).getDatabase();
+      const conv = db.getConversation(conversationId);
+      const savedMode = (conv?.data as any)?.extra?.sessionMode || 'default';
+      return { success: true, data: { mode: savedMode, initialized: false } };
     } catch {
       return { success: true, data: { mode: 'default', initialized: false } };
     }

@@ -389,12 +389,11 @@ const ConversationRow: React.FC<ConversationRowProps> = (props) => {
         <FlexFullContainer className='h-24px min-w-0 flex-1 collapsed-hidden ml-10px'>
           <Tooltip
             content={
-              <div>
+              <div style={{ maxWidth: 400, wordBreak: 'break-word' }}>
                 <div>{conversation.name}</div>
                 {conversation.extra?.workspace && <div className='text-11px opacity-70 mt-2px'>{conversation.extra.workspace}</div>}
               </div>
             }
-            disabled={collapsed || !conversation.name}
             position='top'
           >
             <div className={classNames('chat-history__item-name overflow-hidden text-ellipsis block w-full text-14px lh-24px whitespace-nowrap min-w-0', { 'text-primary font-medium': selected && !batchMode })}>{conversation.name}</div>

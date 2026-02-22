@@ -973,7 +973,7 @@ async function syncAssistantsFromClaudePlugins(configFile: any): Promise<void> {
       description: meta.description,
       avatar: meta.avatar,
       enabled: true,
-      isPreset: false,
+      isPreset: true,
       isBuiltin: false,
     } as AcpBackendConfig);
     existingIds.add(pluginId);

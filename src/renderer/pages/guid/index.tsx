@@ -485,6 +485,12 @@ const Guid: React.FC = () => {
   );
 
   // 获取可用的 ACP agents - 基于全局标记位
+  // Load Claude model from ~/.claude/settings.json
+  const { data: claudeSettingsModel } = useSWR('acp.claude-settings-model', async () => {
+    const result = await ipcBridge.acpConversation.getClaudeSettingsModel.invoke();
+    return result.success ? result.data?.model : null;
+  });
+
   const { data: availableAgentsData } = useSWR('acp.agents.available', async () => {
     const result = await ipcBridge.acpConversation.getAvailableAgents.invoke();
     if (result.success) {
@@ -1725,7 +1731,7 @@ const Guid: React.FC = () => {
                 ) : (
                   <Tooltip content={t('conversation.welcome.modelSwitchNotSupported')} position='top'>
                     <Button className={'sendbox-model-btn'} shape='round' style={{ cursor: 'default' }}>
-                      {t('conversation.welcome.useCliModel')}
+                      {claudeSettingsModel || t('conversation.welcome.useCliModel')}
                     </Button>
                   </Tooltip>
                 )}

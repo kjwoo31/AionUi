@@ -250,4 +250,15 @@ export function initAcpConversationBridge(): void {
       return { success: false, msg: errorMsg };
     }
   });
+
+  // Get Claude model from ~/.claude/settings.json
+  ipcBridge.acpConversation.getClaudeSettingsModel.provider(async () => {
+    try {
+      const { getClaudeModel } = await import('@/agent/acp/utils');
+      const model = getClaudeModel();
+      return { success: true, data: { model } };
+    } catch {
+      return { success: true, data: { model: null } };
+    }
+  });
 }

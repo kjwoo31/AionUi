@@ -1801,7 +1801,7 @@ const Guid: React.FC = () => {
                   <FolderOpen className='m-r-8px flex-shrink-0' theme='outline' size='16' fill={iconColors.secondary} style={{ lineHeight: 0 }} />
                   <Tooltip content={dir} position='top'>
                     <span className='truncate'>
-                      {t('conversation.welcome.currentWorkspace')}: {dir}
+                      {t('conversation.welcome.currentWorkspace')}: {dir.split(/[/\\]/).filter(Boolean).pop() || dir}
                     </span>
                   </Tooltip>
                 </div>

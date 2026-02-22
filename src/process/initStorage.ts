@@ -698,8 +698,16 @@ const initStorage = async () => {
       }
     }
 
+    // Remove builtin assistants that no longer exist in presets
+    const builtinIds = new Set(builtinAssistants.map((a: AcpBackendConfig) => a.id));
+    const beforeLength = updatedAgents.length;
+    const cleanedAgents = updatedAgents.filter((a: AcpBackendConfig) => !a.isBuiltin || builtinIds.has(a.id));
+    if (cleanedAgents.length !== beforeLength) {
+      hasChanges = true;
+    }
+
     if (hasChanges) {
-      await configFile.set('acp.customAgents', updatedAgents);
+      await configFile.set('acp.customAgents', cleanedAgents);
     }
 
     // 标记迁移完成 / Mark migration as done

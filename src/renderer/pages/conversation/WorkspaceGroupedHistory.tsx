@@ -1289,9 +1289,11 @@ const WorkspaceGroupedHistory: React.FC<WorkspaceGroupedHistoryProps> = ({ onSes
                       onToggle={() => handleToggleWorkspace(group.workspace)}
                       siderCollapsed={collapsed}
                       header={
-                        <div className='flex items-center gap-8px text-14px min-w-0'>
-                          <span className='font-medium truncate flex-1 text-t-primary min-w-0'>{group.displayName}</span>
-                        </div>
+                        <Tooltip content={group.workspace} position='top'>
+                          <div className='flex items-center gap-8px text-14px min-w-0'>
+                            <span className='font-medium truncate flex-1 text-t-primary min-w-0'>{group.displayName}</span>
+                          </div>
+                        </Tooltip>
                       }
                     >
                       <div className={classNames('flex flex-col gap-2px min-w-0', { 'mt-4px': !collapsed })}>{group.conversations.map((conversation) => renderConversation(conversation))}</div>

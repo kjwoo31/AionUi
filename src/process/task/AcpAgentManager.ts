@@ -61,18 +61,7 @@ class AcpAgentManager extends BaseAgentManager<AcpAgentManagerData, AcpPermissio
     this.conversation_id = data.conversation_id;
     this.workspace = data.workspace;
     this.options = data;
-    // Use sessionMode from conversation, fallback to ~/.claude/settings.json defaultMode
-    if (data.sessionMode) {
-      this.currentMode = data.sessionMode;
-    } else {
-      try {
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
-        const { getClaudeDefaultMode } = require('@/agent/acp/utils');
-        this.currentMode = getClaudeDefaultMode() || 'default';
-      } catch {
-        this.currentMode = 'default';
-      }
-    }
+    this.currentMode = data.sessionMode || 'bypassPermissions';
     this.persistedModelId = data.currentModelId || null;
     this.status = 'pending';
   }

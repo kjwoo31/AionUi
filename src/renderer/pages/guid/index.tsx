@@ -510,7 +510,11 @@ const Guid: React.FC = () => {
     const loadLastSelectedAgent = async () => {
       try {
         const savedAgentKey = await ConfigStorage.get('guid.lastSelectedAgent');
-        if (cancelled || !savedAgentKey) return;
+        if (cancelled || !savedAgentKey) {
+          // No saved agent: persist the default ('claude')
+          await ConfigStorage.set('guid.lastSelectedAgent', 'claude').catch(() => {});
+          return;
+        }
 
         // 1. Check availableAgents first
         const isInAvailable = availableAgents.some((agent) => {

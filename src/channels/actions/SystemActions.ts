@@ -80,7 +80,7 @@ export async function getChannelDefaultModel(_platform: PluginType): Promise<TPr
     name: 'Anthropic',
     baseUrl: 'https://api.anthropic.com',
     apiKey: '',
-    useModel: 'claude-sonnet-4-6',
+    useModel: 'claude-opus-4-6',
   };
 }
 

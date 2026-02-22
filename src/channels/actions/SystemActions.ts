@@ -57,15 +57,18 @@ export async function getChannelDefaultModel(_platform: PluginType): Promise<TPr
       }
     }
 
-    // Fallback: try to get any configured provider (prefer anthropic, then any)
+    // Fallback: try to get any configured provider (prefer anthropic with best model)
     const providers = await ProcessConfig.get('model.config');
     if (providers && Array.isArray(providers)) {
       const anthropicProvider = providers.find((p) => p.platform === 'anthropic');
       const fallbackProvider = anthropicProvider || providers.find((p) => p.model?.length > 0);
       if (fallbackProvider && fallbackProvider.model?.length > 0) {
+        // Prefer the best available model (opus > sonnet > haiku)
+        const preferredModels = ['claude-opus-4-6', 'claude-sonnet-4-6', 'claude-haiku-4-5-20251001'];
+        const bestModel = preferredModels.find((m) => fallbackProvider.model.includes(m)) || fallbackProvider.model[0];
         return {
           ...fallbackProvider,
-          useModel: fallbackProvider.model[0],
+          useModel: bestModel,
         } as TProviderWithModel;
       }
     }

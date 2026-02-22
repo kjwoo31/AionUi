@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { execSync } from 'child_process';
+import { execFileSync } from 'child_process';
 import type { AcpBackendAll, PresetAgentType } from '@/types/acpTypes';
 import { POTENTIAL_ACP_CLIS } from '@/types/acpTypes';
 import { ProcessConfig } from '@/process/initStorage';
@@ -79,10 +79,9 @@ class AcpDetector {
     const whichCommand = isWindows ? 'where' : 'which';
 
     const isCliAvailable = (cliCommand: string): boolean => {
-      // Keep original behavior: prefer where/which, then fallback on Windows to Get-Command.
-      // 保持原逻辑：优先使用 where/which，Windows 下失败再回退到 Get-Command。
+      // Use execFileSync to avoid shell injection via command arguments
       try {
-        execSync(`${whichCommand} ${cliCommand}`, {
+        execFileSync(whichCommand, [cliCommand], {
           encoding: 'utf-8',
           stdio: 'pipe',
           timeout: 1000,
@@ -95,8 +94,7 @@ class AcpDetector {
       if (isWindows) {
         try {
           // PowerShell fallback for shim scripts like claude.ps1 (vfox)
-          // PowerShell 回退，支持 claude.ps1 这类 shim（例如 vfox）
-          execSync(`powershell -NoProfile -NonInteractive -Command "Get-Command -All ${cliCommand} | Select-Object -First 1 | Out-Null"`, {
+          execFileSync('powershell', ['-NoProfile', '-NonInteractive', '-Command', `Get-Command -All ${cliCommand} | Select-Object -First 1 | Out-Null`], {
             encoding: 'utf-8',
             stdio: 'pipe',
             timeout: 1000,
@@ -139,12 +137,19 @@ class AcpDetector {
 
     // 始终添加内置 Gemini 作为默认选项（无需检测其他 CLI）
     // Always add built-in Gemini as default option (no CLI detection needed)
-    detected.unshift({
+    detected.push({
       backend: 'gemini',
       name: 'Gemini CLI',
       cliPath: undefined,
       acpArgs: undefined,
     });
+
+    // Prioritize Claude Code: move to front if detected
+    const claudeIndex = detected.findIndex((a) => a.backend === 'claude');
+    if (claudeIndex > 0) {
+      const [claude] = detected.splice(claudeIndex, 1);
+      detected.unshift(claude);
+    }
 
     // Check for custom agents configuration - insert after claude if found
     await this.addCustomAgentsToList(detected);

@@ -78,7 +78,7 @@ export function setupBasicMiddleware(app: Express): void {
   // Must be applied after cookieParser and before routes
   // CSRF 保护使用 tiny-csrf（符合 CodeQL 要求）
   // 必须在 cookieParser 之后、路由之前应用
-  app.use(cookieParser('cookie-parser-secret'));
+  app.use(cookieParser(CSRF_SECRET));
   // P1 安全修复：登录接口启用 CSRF 保护（前端已添加 withCsrfToken）
   // P1 Security fix: Enable CSRF for login (frontend already uses withCsrfToken)
   // 仅排除 QR 登录（有独立的一次性 token 保护机制）
@@ -87,7 +87,7 @@ export function setupBasicMiddleware(app: Express): void {
     csrf(
       CSRF_SECRET,
       ['POST', 'PUT', 'DELETE', 'PATCH'], // Protected methods
-      ['/login', '/api/auth/qr-login'], // Excluded: login form and QR login
+      ['/api/auth/qr-login'], // Excluded: QR login only (has its own one-time token protection)
       [] // No service worker URLs
     )
   );
@@ -161,8 +161,9 @@ export function setupCors(app: Express, port: number, allowRemote: boolean): voi
           return;
         }
 
+        // Reject 'null' origin (sandboxed iframes, data: URIs) to prevent CSRF
         if (origin === 'null') {
-          callback(null, true);
+          callback(null, false);
           return;
         }
 

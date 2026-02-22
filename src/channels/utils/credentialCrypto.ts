@@ -6,40 +6,51 @@
 
 /**
  * Credential storage utilities
- * Uses Base64 encoding for basic obfuscation when storing in database.
- * Note: This is not cryptographically secure, but provides basic protection
- * against casual inspection of the database file.
+ * Uses Electron safeStorage API for OS-level encryption (DPAPI on Windows,
+ * Keychain on macOS, libsecret on Linux). Falls back to Base64 encoding
+ * when safeStorage is unavailable.
  */
 
+import { safeStorage } from 'electron';
+
 /**
- * Check if encryption is available (always returns true for database storage)
+ * Check if OS-level encryption is available
  */
 export function isEncryptionAvailable(): boolean {
-  return true;
+  return safeStorage.isEncryptionAvailable();
 }
 
 /**
- * Encode a string value for storage
- * @param plaintext - The string to encode
- * @returns Base64-encoded string with prefix
+ * Encrypt a string value for storage
+ * @param plaintext - The string to encrypt
+ * @returns Encrypted string with prefix (enc: for safeStorage, b64: for fallback)
  */
 export function encryptString(plaintext: string): string {
   if (!plaintext) return '';
 
   try {
+    if (safeStorage.isEncryptionAvailable()) {
+      const encrypted = safeStorage.encryptString(plaintext);
+      return `enc:${encrypted.toString('base64')}`;
+    }
+  } catch (error) {
+    console.warn('[CredentialStorage] safeStorage encryption failed, falling back to Base64:', error);
+  }
+
+  // Fallback: Base64 encoding (not cryptographically secure)
+  try {
     const encoded = Buffer.from(plaintext, 'utf-8').toString('base64');
     return `b64:${encoded}`;
   } catch (error) {
     console.error('[CredentialStorage] Encoding failed:', error);
-    // Fallback to plain storage with prefix
     return `plain:${plaintext}`;
   }
 }
 
 /**
- * Decode a previously encoded string
- * @param encoded - The encoded string (with b64:, enc:, or plain: prefix)
- * @returns The decoded plaintext
+ * Decrypt a previously encrypted string
+ * @param encoded - The encrypted string (with enc:, b64:, or plain: prefix)
+ * @returns The decrypted plaintext
  */
 export function decryptString(encoded: string): string {
   if (!encoded) return '';
@@ -49,24 +60,23 @@ export function decryptString(encoded: string): string {
     return encoded.slice(6);
   }
 
-  // Handle b64: prefix (new format)
-  if (encoded.startsWith('b64:')) {
+  // Handle enc: prefix (safeStorage encrypted)
+  if (encoded.startsWith('enc:')) {
     try {
-      return Buffer.from(encoded.slice(4), 'base64').toString('utf-8');
+      const buffer = Buffer.from(encoded.slice(4), 'base64');
+      return safeStorage.decryptString(buffer);
     } catch (error) {
-      console.error('[CredentialStorage] Decoding failed:', error);
+      console.error('[CredentialStorage] safeStorage decryption failed:', error);
       return '';
     }
   }
 
-  // Handle enc: prefix (legacy format from safeStorage)
-  // Try to decode as base64 for backward compatibility
-  if (encoded.startsWith('enc:')) {
-    console.warn('[CredentialStorage] Found legacy enc: format, attempting base64 decode');
+  // Handle b64: prefix (Base64 fallback)
+  if (encoded.startsWith('b64:')) {
     try {
       return Buffer.from(encoded.slice(4), 'base64').toString('utf-8');
-    } catch {
-      console.error('[CredentialStorage] Cannot decode legacy enc: format');
+    } catch (error) {
+      console.error('[CredentialStorage] Base64 decoding failed:', error);
       return '';
     }
   }
@@ -78,8 +88,8 @@ export function decryptString(encoded: string): string {
 }
 
 /**
- * Encode credentials object
- * Only encodes sensitive fields (token)
+ * Encrypt credentials object
+ * Only encrypts sensitive fields (token)
  */
 export function encryptCredentials(credentials: { token?: string } | undefined): { token?: string } | undefined {
   if (!credentials) return undefined;
@@ -91,7 +101,7 @@ export function encryptCredentials(credentials: { token?: string } | undefined):
 }
 
 /**
- * Decode credentials object
+ * Decrypt credentials object
  */
 export function decryptCredentials(credentials: { token?: string } | undefined): { token?: string } | undefined {
   if (!credentials) return undefined;

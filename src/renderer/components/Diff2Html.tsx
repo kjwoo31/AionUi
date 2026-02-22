@@ -13,6 +13,7 @@ import { ExpandDownOne, FoldUpOne, PreviewOpen } from '@icon-park/react';
 import classNames from 'classnames';
 import { html } from 'diff2html';
 import 'diff2html/bundles/css/diff2html.min.css';
+import DOMPurify from 'dompurify';
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import ReactDOM from 'react-dom';
 import { useTranslation } from 'react-i18next';
@@ -129,7 +130,7 @@ const Diff2Html = ({ diff, className, title, filePath }: { diff: string; classNa
 
       const name = header.querySelector('.d2h-file-name') as HTMLDivElement;
       if (name && title) {
-        name.innerHTML = title;
+        name.textContent = title;
       }
     } else {
       console.warn('[Diff2Html] Header or operatorRef missing', { hasHeader: !!header, hasRef: !!operatorRef.current });
@@ -146,7 +147,7 @@ const Diff2Html = ({ diff, className, title, filePath }: { diff: string; classNa
           })}
           ref={containerRef}
           dangerouslySetInnerHTML={{
-            __html: diffHtmlContent,
+            __html: DOMPurify.sanitize(diffHtmlContent),
           }}
         ></div>
         {operatorRef.current &&

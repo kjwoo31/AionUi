@@ -220,7 +220,7 @@ export function getEnhancedEnv(customEnv?: Record<string, string>): Record<strin
   // 合并两个来源的 PATH（开发模式下 shell 环境可能缺少 nvm/fnm 路径）
   const mergedPath = mergePaths(process.env.PATH, shellEnv.PATH);
 
-  return {
+  const result = {
     ...process.env,
     ...shellEnv,
     ...customEnv,
@@ -228,6 +228,17 @@ export function getEnhancedEnv(customEnv?: Record<string, string>): Record<strin
     // When customEnv.PATH exists, merge it with the already merged path (fix: don't override)
     PATH: customEnv?.PATH ? mergePaths(mergedPath, customEnv.PATH) : mergedPath,
   } as Record<string, string>;
+
+  // Windows: inject Git Bash as SHELL so CLI tools (e.g. Claude Code) use bash
+  // for hook/script execution instead of cmd.exe/PowerShell
+  if (process.platform === 'win32' && !result.SHELL) {
+    const gitBashPath = findGitBash();
+    if (gitBashPath) {
+      result.SHELL = gitBashPath;
+    }
+  }
+
+  return result;
 }
 
 /**
@@ -407,4 +418,37 @@ export function loadFullShellEnvironment(): Record<string, string> {
     console.warn('[ShellEnv] Failed to load full shell env:', error instanceof Error ? error.message : String(error));
   }
   return cachedFullShellEnv;
+}
+
+/**
+ * Find Git Bash executable on Windows.
+ * Checks standard Git for Windows install locations, then falls back to PATH.
+ *
+ * Windows에서 Git Bash 실행 파일을 찾습니다.
+ * Git for Windows 표준 설치 경로를 확인한 후, PATH에서 탐색합니다.
+ */
+function findGitBash(): string | null {
+  const candidates = ['C:\\Program Files\\Git\\bin\\bash.exe', 'C:\\Program Files (x86)\\Git\\bin\\bash.exe'];
+  for (const p of candidates) {
+    try {
+      accessSync(p);
+      return p;
+    } catch {
+      /* not found at this path */
+    }
+  }
+  // Fallback: check PATH
+  try {
+    const result = execFileSync('where', ['bash'], {
+      encoding: 'utf-8',
+      timeout: 3000,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+      .trim()
+      .split('\n')[0];
+    if (result) return result;
+  } catch {
+    /* bash not on PATH */
+  }
+  return null;
 }

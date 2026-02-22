@@ -609,6 +609,13 @@ const initStorage = async () => {
   } catch (error) {
     console.error('[AionUi] Failed to initialize default MCP servers:', error);
   }
+  // 4.1 Auto-import MCP servers from Claude Code (bidirectional sync)
+  try {
+    await syncMcpFromClaudeCode(configFile);
+  } catch (error) {
+    console.warn('[AionUi] Failed to sync MCP from Claude Code:', error);
+  }
+
   // 5. 初始化内置助手（Assistants）
   try {
     // 5.1 初始化内置助手的规则文件到用户目录
@@ -835,5 +842,74 @@ export const loadSkillsContent = async (enabledSkills: string[]): Promise<string
 export const clearSkillsCache = (): void => {
   skillsContentCache.clear();
 };
+
+/**
+ * Auto-import MCP servers from Claude Code CLI into AionUi config.
+ * Runs at startup to keep AionUi in sync with Claude Code's MCP configuration.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function syncMcpFromClaudeCode(configFile: any): Promise<void> {
+  const { execFileSync } = await import('child_process');
+  const { getEnhancedEnv } = await import('@process/utils/shellEnv');
+
+  // Run 'claude mcp list' to detect Claude Code MCP servers
+  let output: string;
+  try {
+    const isWindows = process.platform === 'win32';
+    const env = { ...getEnhancedEnv(), NODE_OPTIONS: '' };
+    output = execFileSync(isWindows ? 'claude.exe' : 'claude', ['mcp', 'list'], {
+      encoding: 'utf-8',
+      timeout: 10000,
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env,
+    });
+  } catch {
+    // Claude CLI not available or no MCP servers
+    return;
+  }
+
+  if (!output || output.includes('No MCP servers configured') || !output.trim()) {
+    return;
+  }
+
+  // Parse detected servers
+  const detectedServers: IMcpServer[] = [];
+  for (const line of output.split('\n')) {
+    /* eslint-disable no-control-regex */
+    const cleanLine = line
+      .replace(/\u001b\[[0-9;]*m/g, '')
+      .replace(/\[[0-9;]*m/g, '')
+      .trim();
+    /* eslint-enable no-control-regex */
+    const match = cleanLine.match(/^([^:]+):\s+(.+?)\s*-\s*[✓✗]\s*(.+)$/);
+    if (match) {
+      const [, name, commandStr] = match;
+      const parts = commandStr.trim().split(/\s+/);
+      detectedServers.push({
+        id: `claude_${name.trim()}`,
+        name: name.trim(),
+        transport: { type: 'stdio' as const, command: parts[0], args: parts.slice(1), env: {} },
+        tools: [],
+        enabled: true,
+        status: 'disconnected',
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        description: 'Imported from Claude Code',
+      } as IMcpServer);
+    }
+  }
+
+  if (detectedServers.length === 0) return;
+
+  // Merge with existing AionUi MCP config (don't overwrite user additions)
+  const existing = ((await configFile.get('mcp.config').catch((): IMcpServer[] => [])) || []) as IMcpServer[];
+  const existingNames = new Set(existing.map((s: IMcpServer) => s.name));
+  const newServers = detectedServers.filter((s) => !existingNames.has(s.name));
+
+  if (newServers.length > 0) {
+    await configFile.set('mcp.config', [...existing, ...newServers]);
+    console.log(`[AionUi] Auto-imported ${newServers.length} MCP server(s) from Claude Code: ${newServers.map((s) => s.name).join(', ')}`);
+  }
+}
 
 export default initStorage;

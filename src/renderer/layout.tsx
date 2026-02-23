@@ -13,6 +13,7 @@ import { MenuFold, MenuUnfold } from '@icon-park/react';
 import classNames from 'classnames';
 import React, { useEffect, useRef, useState } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
+import { initAgentProgressSubscription } from './context/AgentProgressContext';
 import { LayoutContext } from './context/LayoutContext';
 import { useDirectorySelection } from './hooks/useDirectorySelection';
 import { useMultiAgentDetection } from './hooks/useMultiAgentDetection';
@@ -158,6 +159,9 @@ const Layout: React.FC<{
     window.addEventListener('resize', checkMobile);
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
+
+  // Initialize agent progress tracking (cross-conversation status in sidebar)
+  useEffect(() => initAgentProgressSubscription(), []);
 
   // 进入移动端后立即折叠 / Collapse immediately when switching to mobile
   useEffect(() => {

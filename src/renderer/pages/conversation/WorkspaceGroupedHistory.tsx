@@ -9,6 +9,7 @@ import type { TMessage } from '@/common/chatLib';
 import type { IDirOrFile } from '@/common/ipcBridge';
 import type { TChatConversation } from '@/common/storage';
 import { getAgentLogo } from '@/renderer/utils/agentLogo';
+import { useAgentProgress } from '@/renderer/context/AgentProgressContext';
 import DirectorySelectionModal from '@/renderer/components/DirectorySelectionModal';
 import FlexFullContainer from '@/renderer/components/FlexFullContainer';
 import { usePresetAssistantInfo } from '@/renderer/hooks/usePresetAssistantInfo';
@@ -325,6 +326,20 @@ interface ConversationRowProps {
   onTogglePin: (conversation: TChatConversation) => void;
 }
 
+const AgentProgressDot: React.FC<{ status?: string }> = ({ status }) => {
+  const color = status === 'waiting_permission' ? 'rgb(var(--warning-6))' : 'rgb(var(--success-6))';
+  return (
+    <span
+      className='absolute -top-1px -right-1px w-8px h-8px rounded-full z-1'
+      style={{
+        backgroundColor: color,
+        boxShadow: `0 0 0 2px var(--color-bg-2)`,
+        animation: 'agent-progress-pulse 1.5s ease-in-out infinite',
+      }}
+    />
+  );
+};
+
 const ConversationRow: React.FC<ConversationRowProps> = (props) => {
   const { conversation, collapsed, batchMode, checked, selected, menuVisible } = props;
   const { onToggleChecked, onConversationClick, onOpenMenu, onMenuVisibleChange, onEditStart, onDelete, onExport, onTogglePin } = props;
@@ -333,26 +348,35 @@ const ConversationRow: React.FC<ConversationRowProps> = (props) => {
   const { info: assistantInfo } = usePresetAssistantInfo(conversation);
   const isPinned = isConversationPinned(conversation);
   const cronStatus = getJobStatus(conversation.id);
+  const agentProgress = useAgentProgress(conversation.id);
 
   const renderLeadingIcon = () => {
+    let icon: React.ReactNode;
+
     if (cronStatus !== 'none') {
-      return <CronJobIndicator status={cronStatus} size={20} className='flex-shrink-0' />;
-    }
-
-    if (assistantInfo) {
+      icon = <CronJobIndicator status={cronStatus} size={20} className='flex-shrink-0' />;
+    } else if (assistantInfo) {
       if (assistantInfo.isEmoji) {
-        return <span className='text-18px leading-none flex-shrink-0'>{assistantInfo.logo}</span>;
+        icon = <span className='text-18px leading-none flex-shrink-0'>{assistantInfo.logo}</span>;
+      } else {
+        icon = <img src={assistantInfo.logo} alt={assistantInfo.name} className='w-20px h-20px rounded-50% flex-shrink-0' />;
       }
-      return <img src={assistantInfo.logo} alt={assistantInfo.name} className='w-20px h-20px rounded-50% flex-shrink-0' />;
+    } else {
+      const backendKey = getBackendKeyFromConversation(conversation);
+      const logo = getAgentLogo(backendKey);
+      if (logo) {
+        icon = <img src={logo} alt={`${backendKey || 'agent'} logo`} className='w-20px h-20px rounded-50% flex-shrink-0' />;
+      } else {
+        icon = <MessageOne theme='outline' size='20' className='line-height-0 flex-shrink-0' />;
+      }
     }
 
-    const backendKey = getBackendKeyFromConversation(conversation);
-    const logo = getAgentLogo(backendKey);
-    if (logo) {
-      return <img src={logo} alt={`${backendKey || 'agent'} logo`} className='w-20px h-20px rounded-50% flex-shrink-0' />;
-    }
-
-    return <MessageOne theme='outline' size='20' className='line-height-0 flex-shrink-0' />;
+    return (
+      <span className='relative inline-flex flex-shrink-0'>
+        {icon}
+        {agentProgress?.active && <AgentProgressDot status={agentProgress.status} />}
+      </span>
+    );
   };
 
   const handleRowClick = () => {
@@ -386,11 +410,14 @@ const ConversationRow: React.FC<ConversationRowProps> = (props) => {
           </span>
         )}
         {renderLeadingIcon()}
-        <FlexFullContainer className='h-24px min-w-0 flex-1 collapsed-hidden ml-10px'>
-          <Tooltip content={<div style={{ maxWidth: 400, wordBreak: 'break-word' }}>{conversation.name}</div>} position='top'>
-            <div className={classNames('chat-history__item-name overflow-hidden text-ellipsis block w-full text-14px lh-24px whitespace-nowrap min-w-0', { 'text-primary font-medium': selected && !batchMode })}>{conversation.name}</div>
-          </Tooltip>
-        </FlexFullContainer>
+        <div className='min-w-0 flex-1 collapsed-hidden ml-10px'>
+          <FlexFullContainer className='h-24px min-w-0'>
+            <Tooltip content={<div style={{ maxWidth: 400, wordBreak: 'break-word' }}>{conversation.name}</div>} position='top'>
+              <div className={classNames('chat-history__item-name overflow-hidden text-ellipsis block w-full text-14px lh-24px whitespace-nowrap min-w-0', { 'text-primary font-medium': selected && !batchMode })}>{conversation.name}</div>
+            </Tooltip>
+          </FlexFullContainer>
+          {agentProgress?.active && agentProgress.currentAction && <div className='text-11px lh-16px text-t-secondary overflow-hidden text-ellipsis whitespace-nowrap min-w-0 opacity-70'>↳ {agentProgress.currentAction}</div>}
+        </div>
 
         {!batchMode && (
           <div

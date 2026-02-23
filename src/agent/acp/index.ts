@@ -244,13 +244,32 @@ export class AcpAgent {
       if (this.extra.backend === 'claude') {
         const configuredModel = getClaudeModel();
         if (configuredModel) {
+          let modelSet = false;
+          // Try configOptions API first (stable, supports [1m] variants)
           try {
-            const modelStart = Date.now();
-            await this.connection.setModel(configuredModel);
-            if (ACP_PERF_LOG) console.log(`[ACP-PERF] start: model set ${Date.now() - modelStart}ms`);
+            const configOptions = this.connection.getConfigOptions();
+            const modelOption = configOptions?.find((opt) => opt.category === 'model');
+            if (modelOption && modelOption.type === 'select' && modelOption.options && modelOption.id) {
+              const match = modelOption.options.find((o) => o.value === configuredModel);
+              if (match) {
+                const modelStart = Date.now();
+                await this.connection.setConfigOption(modelOption.id, configuredModel);
+                modelSet = true;
+                if (ACP_PERF_LOG) console.log(`[ACP-PERF] start: model set via configOption ${Date.now() - modelStart}ms`);
+              }
+            }
           } catch (error) {
-            // Log warning but don't fail - fallback to default model
-            console.warn(`[ACP] Failed to set model from settings: ${error instanceof Error ? error.message : String(error)}`);
+            console.warn(`[ACP] Failed to set model via configOption: ${error instanceof Error ? error.message : String(error)}`);
+          }
+          // Fallback to session/set_model API
+          if (!modelSet) {
+            try {
+              const modelStart = Date.now();
+              await this.connection.setModel(configuredModel);
+              if (ACP_PERF_LOG) console.log(`[ACP-PERF] start: model set via setModel ${Date.now() - modelStart}ms`);
+            } catch (error) {
+              console.warn(`[ACP] Failed to set model from settings: ${error instanceof Error ? error.message : String(error)}`);
+            }
           }
         }
       }

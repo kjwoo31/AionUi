@@ -181,6 +181,20 @@ const Guid: React.FC = () => {
   });
   const claudeSettingsModel = claudeSettings?.model ?? null;
 
+  // Resolve Claude settings.json path for tooltip display
+  const [claudeSettingsPath, setClaudeSettingsPath] = useState('~/.claude/settings.json');
+  useEffect(() => {
+    ipcBridge.application.getPath
+      .invoke({ name: 'home' })
+      .then((home) => {
+        if (home) {
+          const sep = home.includes('\\') ? '\\' : '/';
+          setClaudeSettingsPath(`${home}${sep}.claude${sep}settings.json`);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
   // 打开外部链接 / Open external link
   const location = useLocation();
   const [input, setInput] = useState('');
@@ -1737,9 +1751,9 @@ const Guid: React.FC = () => {
                     </Button>
                   </Dropdown>
                 ) : (
-                  <Tooltip content={t('conversation.welcome.modelSwitchNotSupported')} position='top'>
+                  <Tooltip content={t('conversation.welcome.modelSettingsInfo', { path: claudeSettingsPath })} position='top'>
                     <Button className={'sendbox-model-btn'} shape='round' style={{ cursor: 'default' }}>
-                      {claudeSettingsModel || t('conversation.welcome.useCliModel')}
+                      {claudeSettingsModel || t('conversation.welcome.modelLabel')}
                     </Button>
                   </Tooltip>
                 )}

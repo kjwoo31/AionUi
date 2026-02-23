@@ -24,6 +24,7 @@ const AcpModelSelector: React.FC<{
 }> = ({ conversationId }) => {
   const { t } = useTranslation();
   const [modelInfo, setModelInfo] = useState<AcpModelInfo | null>(null);
+  const [settingsPath, setSettingsPath] = useState('~/.claude/settings.json');
   const modelInfoRef = useRef(modelInfo);
   modelInfoRef.current = modelInfo;
 
@@ -39,6 +40,16 @@ const AcpModelSelector: React.FC<{
       .catch(() => {
         // Silently ignore - model info is optional
       });
+    // Resolve actual settings path
+    ipcBridge.application.getPath
+      .invoke({ name: 'home' })
+      .then((home) => {
+        if (home) {
+          const sep = home.includes('\\') ? '\\' : '/';
+          setSettingsPath(`${home}${sep}.claude${sep}settings.json`);
+        }
+      })
+      .catch(() => {});
   }, [conversationId]);
 
   // Listen for acp_model_info / codex_model_info events from responseStream
@@ -80,12 +91,12 @@ const AcpModelSelector: React.FC<{
     [conversationId]
   );
 
-  // State 1: No model info — show disabled "Use CLI model" button
+  // State 1: No model info — show "Model" with settings path tooltip
   if (!modelInfo) {
     return (
-      <Tooltip content={t('conversation.welcome.modelSwitchNotSupported')} position='top'>
+      <Tooltip content={t('conversation.welcome.modelSettingsInfo', { path: settingsPath })} position='top'>
         <Button className='sendbox-model-btn header-model-btn' shape='round' size='small' style={{ cursor: 'default' }}>
-          {t('conversation.welcome.useCliModel')}
+          {t('conversation.welcome.modelLabel')}
         </Button>
       </Tooltip>
     );

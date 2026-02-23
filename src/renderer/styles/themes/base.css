@@ -293,6 +293,16 @@ body,
   }
 }
 
+@keyframes agent-progress-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
+}
+
 .chat-history__item,
 .settings-sider__item {
   transition:

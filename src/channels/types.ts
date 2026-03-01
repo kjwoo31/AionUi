@@ -22,6 +22,8 @@ export type PluginStatus = 'created' | 'initializing' | 'ready' | 'starting' | '
 export interface IPluginCredentials {
   // Telegram
   token?: string;
+  // Slack - App-Level Token (for Socket Mode)
+  appToken?: string;
 }
 
 /**
@@ -30,6 +32,7 @@ export interface IPluginCredentials {
  */
 export function hasPluginCredentials(type: PluginType, credentials?: IPluginCredentials): boolean {
   if (!credentials) return false;
+  if (type === 'slack') return !!credentials.token && !!credentials.appToken;
   return !!credentials.token;
 }
 
@@ -447,13 +450,13 @@ export function pairingRequestToRow(request: IChannelPairingRequest): IChannelPa
  * Channel platform type for model configuration.
  * Subset of PluginType that currently supports channel conversations.
  */
-export type ChannelPlatform = 'telegram';
+export type ChannelPlatform = 'telegram' | 'slack';
 
 /**
  * Type guard to check if a string is a valid ChannelPlatform
  */
 export function isChannelPlatform(value: string): value is ChannelPlatform {
-  return value === 'telegram';
+  return value === 'telegram' || value === 'slack';
 }
 
 /**
@@ -476,7 +479,7 @@ export function resolveChannelConvType(backend: string): { convType: string; con
  * - empty segments are omitted
  */
 export function getChannelConversationName(platform: ChannelPlatform | PluginType, type?: string, backend?: string, chatId?: string): string {
-  const shortPlatform: Record<string, string> = { telegram: 'tg' };
+  const shortPlatform: Record<string, string> = { telegram: 'tg', slack: 'sl' };
   const parts: string[] = [shortPlatform[platform] ?? platform];
   if (type) parts.push(type);
   if (type === 'acp' && backend) parts.push(backend);

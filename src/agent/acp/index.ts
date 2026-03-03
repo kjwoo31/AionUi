@@ -20,6 +20,7 @@ import { getEnhancedEnv, resolveNpxPath } from '@process/utils/shellEnv';
 import { AcpApprovalStore, createAcpApprovalKey } from './ApprovalStore';
 import { CLAUDE_YOLO_SESSION_MODE, CODEBUDDY_YOLO_SESSION_MODE, IFLOW_YOLO_SESSION_MODE, QWEN_YOLO_SESSION_MODE } from './constants';
 import { getClaudeModel } from './utils';
+import { getDatabase } from '@process/database';
 
 /** Enable ACP performance diagnostics via ACP_PERF=1 */
 const ACP_PERF_LOG = process.env.ACP_PERF === '1';
@@ -115,6 +116,15 @@ export class AcpAgent {
   // Store permission request metadata for later use in confirmMessage
   private permissionRequestMeta = new Map<string, { kind?: string; title?: string; rawInput?: Record<string, unknown> }>();
 
+  // Auto-reconnect state management
+  private isReconnecting = false;
+  private lastReconnectAttempt = 0;
+  private lastSessionResumed = false; // Whether the most recent start() successfully resumed
+  private static readonly RECONNECT_COOLDOWN_MS = 15_000; // Min interval between reconnect bursts
+  private static readonly RECONNECT_MAX_RETRIES = 2;
+  private static readonly RECONNECT_DELAYS = [1_500, 4_000]; // Exponential backoff
+  private static readonly CONTEXT_RECOVERY_MAX_MESSAGES = 30; // Max messages to include in context recovery
+
   constructor(config: AcpAgentConfig) {
     this.id = config.id;
     this.onStreamEvent = config.onStreamEvent;
@@ -149,7 +159,7 @@ export class AcpAgent {
     this.connection.onFileOperation = (operation) => {
       this.handleFileOperation(operation);
     };
-    this.connection.onDisconnect = (error) => {
+    this.connection.onDisconnect = (error: { code: number | null; signal: NodeJS.Signals | null; stderr?: string }) => {
       this.handleDisconnect(error);
     };
   }
@@ -215,8 +225,8 @@ export class AcpAgent {
       // Create new session or resume existing one (if ACP backend supports it)
       if (!this.connection.hasActiveSession) {
         const sessionStart = Date.now();
-        await this.createOrResumeSession();
-        if (ACP_PERF_LOG) console.log(`[ACP-PERF] start: session created ${Date.now() - sessionStart}ms`);
+        this.lastSessionResumed = await this.createOrResumeSession();
+        if (ACP_PERF_LOG) console.log(`[ACP-PERF] start: session created (resumed=${this.lastSessionResumed}) ${Date.now() - sessionStart}ms`);
       }
 
       // YOLO mode: bypass all permission checks for supported backends
@@ -469,6 +479,15 @@ export class AcpAgent {
         if (this.extra.backend === 'qwen') {
           const enhancedMsg = `Qwen ACP Internal Error: This usually means authentication failed or ` + `the Qwen CLI has compatibility issues. Please try: 1) Restart the application ` + `2) Use 'npx @qwen-code/qwen-code' instead of global qwen 3) Check if you have valid Qwen credentials.`;
           this.emitErrorMessage(enhancedMsg);
+          // Emit finish signal to clean up progress indicator and UI loading state
+          if (this.onSignalEvent) {
+            this.onSignalEvent({
+              type: 'finish',
+              conversation_id: this.id,
+              msg_id: uuid(),
+              data: null,
+            });
+          }
           return {
             success: false,
             error: createAcpError(AcpErrorType.AUTHENTICATION_FAILED, enhancedMsg, false),
@@ -494,6 +513,17 @@ export class AcpAgent {
       }
 
       this.emitErrorMessage(errorMsg);
+
+      // Emit finish signal to clean up progress indicator and UI loading state
+      if (this.onSignalEvent) {
+        this.onSignalEvent({
+          type: 'finish',
+          conversation_id: this.id,
+          msg_id: uuid(),
+          data: null,
+        });
+      }
+
       return {
         success: false,
         error: createAcpError(errorType, errorMsg, retryable),
@@ -777,12 +807,32 @@ export class AcpAgent {
       }
       const requestId = data.toolCall.toolCallId; // 使用 toolCallId 作为 requestId
 
+      // Pick the best "allow" optionId from the request's actual options.
+      // Different tools use different optionIds (e.g. ExitPlanMode uses "acceptEdits",
+      // normal tools use "allow_always"), so we must match against the real options
+      // rather than hardcoding a value.
+      const pickAllowOptionId = (): string => {
+        const opts = data.options;
+        if (opts?.length) {
+          // Prefer allow_always kind, then any allow kind
+          const best = opts.find((o) => o.kind === 'allow_always') ?? opts.find((o) => o.kind === 'allow_once');
+          if (best) return best.optionId;
+        }
+        return 'allow_always'; // fallback for legacy/unknown formats
+      };
+
+      // YOLO mode: auto-approve all permission requests without showing dialog
+      if (this.extra.yoloMode) {
+        resolve({ optionId: pickAllowOptionId() });
+        return;
+      }
+
       // Check ApprovalStore for cached "always allow" decision
       // Workaround for claude-agent-acp bug: it returns updatedPermissions but doesn't check suggestions
       const approvalKey = createAcpApprovalKey(data.toolCall);
       if (this.approvalStore.isApprovedForSession(approvalKey)) {
         // Auto-approve without showing dialog - no metadata storage needed
-        resolve({ optionId: 'allow_always' });
+        resolve({ optionId: pickAllowOptionId() });
         return;
       }
 
@@ -859,18 +909,19 @@ export class AcpAgent {
   }
 
   /**
-   * Handle unexpected disconnect from ACP backend
-   * Notify frontend and clean up internal state
+   * Handle unexpected disconnect from ACP backend.
+   * Cleans up internal state and triggers auto-reconnect.
+   * If auto-reconnect fails after retries, falls back to manual reconnect on next message.
    */
-  private handleDisconnect(error: { code: number | null; signal: NodeJS.Signals | null }): void {
-    // 1. Emit disconnected status to frontend
-    this.emitStatusMessage('disconnected');
+  private handleDisconnect(error: { code: number | null; signal: NodeJS.Signals | null; stderr?: string }): void {
+    // 1. Clear internal state immediately
+    this.pendingPermissions.clear();
+    this.permissionRequestMeta.clear();
+    this.approvalStore.clear();
+    this.pendingNavigationTools.clear();
+    this.statusMessageId = null;
 
-    // 2. Emit error message with helpful information
-    const errorMsg = `${this.extra.backend} process disconnected unexpectedly ` + `(code: ${error.code}, signal: ${error.signal}). ` + `Please try sending a new message to reconnect.`;
-    this.emitErrorMessage(errorMsg);
-
-    // 3. Emit finish signal to reset UI loading state
+    // 2. Emit finish signal to reset UI loading state (before reconnect attempt)
     if (this.onSignalEvent) {
       this.onSignalEvent({
         type: 'finish',
@@ -880,12 +931,109 @@ export class AcpAgent {
       });
     }
 
-    // 4. Clear internal state
-    this.pendingPermissions.clear();
-    this.permissionRequestMeta.clear();
-    this.approvalStore.clear();
-    this.pendingNavigationTools.clear();
-    this.statusMessageId = null;
+    // 3. Attempt auto-reconnect (async, fire-and-forget)
+    void this.attemptAutoReconnect(error);
+  }
+
+  /**
+   * Attempt to automatically reconnect after unexpected disconnect.
+   * Uses exponential backoff with a cooldown guard to prevent infinite loops.
+   */
+  private async attemptAutoReconnect(originalError: { code: number | null; signal: NodeJS.Signals | null; stderr?: string }): Promise<void> {
+    // Guard: prevent concurrent reconnect attempts
+    if (this.isReconnecting) return;
+
+    // Guard: cooldown to prevent rapid reconnect loops (e.g. process keeps crashing)
+    const now = Date.now();
+    if (now - this.lastReconnectAttempt < AcpAgent.RECONNECT_COOLDOWN_MS) {
+      this.emitDisconnectError(originalError, 'Auto-reconnect skipped (cooldown active).');
+      return;
+    }
+
+    this.isReconnecting = true;
+    this.lastReconnectAttempt = now;
+
+    try {
+      for (let attempt = 0; attempt < AcpAgent.RECONNECT_MAX_RETRIES; attempt++) {
+        this.emitStatusMessage('reconnecting');
+
+        // Backoff delay before retry
+        const delay = AcpAgent.RECONNECT_DELAYS[attempt] ?? 4_000;
+        await new Promise((resolve) => setTimeout(resolve, delay));
+
+        try {
+          await this.start();
+          // Success — notify frontend
+          console.log(`[ACP] Auto-reconnect succeeded (attempt ${attempt + 1}/${AcpAgent.RECONNECT_MAX_RETRIES}, resumed=${this.lastSessionResumed})`);
+
+          // If session resume failed (new session), inject conversation context
+          // so the agent knows what was discussed before the crash
+          if (!this.lastSessionResumed) {
+            await this.injectConversationContext();
+          }
+          return;
+        } catch (reconnectError) {
+          console.warn(`[ACP] Auto-reconnect attempt ${attempt + 1}/${AcpAgent.RECONNECT_MAX_RETRIES} failed:`, reconnectError);
+        }
+      }
+
+      // All retries exhausted — show disconnect error
+      this.emitDisconnectError(originalError, `Auto-reconnect failed after ${AcpAgent.RECONNECT_MAX_RETRIES} attempts.`);
+    } finally {
+      this.isReconnecting = false;
+    }
+  }
+
+  /**
+   * Emit the final disconnect error to frontend when auto-reconnect is not possible.
+   */
+  private emitDisconnectError(error: { code: number | null; signal: NodeJS.Signals | null; stderr?: string }, reason: string): void {
+    this.emitStatusMessage('disconnected');
+
+    let errorMsg = `${this.extra.backend} process disconnected unexpectedly ` + `(code: ${error.code}, signal: ${error.signal}). ` + `${reason} ` + `Please try sending a new message to reconnect.`;
+    if (error.stderr) {
+      const tail = error.stderr.length > 500 ? '...' + error.stderr.slice(-500) : error.stderr;
+      errorMsg += `\n\nstderr:\n${tail}`;
+    }
+    this.emitErrorMessage(errorMsg);
+  }
+
+  /**
+   * Inject a summary of the previous conversation into the new session.
+   * Called when auto-reconnect creates a new session (resume failed).
+   * Reads recent messages from DB and sends them as context to the agent.
+   */
+  private async injectConversationContext(): Promise<void> {
+    try {
+      const db = getDatabase();
+      // Read the most recent messages (DESC order, last page)
+      const result = db.getConversationMessages(this.id, 0, AcpAgent.CONTEXT_RECOVERY_MAX_MESSAGES, 'DESC');
+      if (!result.data || result.data.length === 0) return;
+
+      // Reverse to chronological order and build context
+      const messages = result.data.reverse();
+      const contextParts: string[] = [];
+
+      for (const msg of messages) {
+        // Only include text messages (user and assistant)
+        if (msg.type !== 'text') continue;
+        const content = typeof msg.content === 'object' && msg.content !== null ? (msg.content as { content?: string }).content || '' : '';
+        if (!content.trim()) continue;
+
+        const role = msg.position === 'right' ? 'User' : 'Assistant';
+        contextParts.push(`[${role}]: ${content}`);
+      }
+
+      if (contextParts.length === 0) return;
+
+      const contextMessage = ['[System] The previous session was interrupted. Below is a summary of the conversation so far.', 'Please continue from where we left off.\n', ...contextParts].join('\n');
+
+      console.log(`[ACP] Injecting conversation context (${contextParts.length} messages) into new session`);
+      await this.connection.sendPrompt(contextMessage);
+    } catch (error) {
+      // Context injection is best-effort — don't block reconnect on failure
+      console.warn('[ACP] Failed to inject conversation context:', error);
+    }
   }
 
   private handleFileOperation(operation: { method: string; path: string; content?: string; sessionId: string }): void {
@@ -917,7 +1065,7 @@ export class AcpAgent {
     }
   }
 
-  private emitStatusMessage(status: 'connecting' | 'connected' | 'authenticated' | 'session_active' | 'disconnected' | 'error'): void {
+  private emitStatusMessage(status: 'connecting' | 'connected' | 'authenticated' | 'session_active' | 'disconnected' | 'reconnecting' | 'error'): void {
     // Use fixed ID for status messages so they update instead of duplicate
     if (!this.statusMessageId) {
       this.statusMessageId = uuid();
@@ -1116,16 +1264,26 @@ export class AcpAgent {
    * Create a new session or resume an existing one, and notify upper layer if session ID changed.
    * 创建新会话或恢复现有会话，如果 session ID 变化则通知上层。
    */
-  private async createOrResumeSession(): Promise<void> {
+  /**
+   * Create a new session or resume an existing one.
+   * @returns true if an existing session was successfully resumed, false if a new session was created.
+   */
+  private async createOrResumeSession(): Promise<boolean> {
     const resumeSessionId = this.extra.acpSessionId;
     const response = await this.connection.newSession(this.extra.workspace, {
       resumeSessionId,
       forkSession: false,
     });
+    // Keep local copy in sync so auto-reconnect can resume the same session
+    if (response.sessionId) {
+      this.extra.acpSessionId = response.sessionId;
+    }
     // Notify upper layer if session ID changed (new session or resume failed)
-    if (response.sessionId && response.sessionId !== resumeSessionId) {
+    const resumed = !!(resumeSessionId && response.sessionId === resumeSessionId);
+    if (response.sessionId && !resumed) {
       this.onSessionIdUpdate?.(response.sessionId);
     }
+    return resumed;
   }
 
   // Add kill method for compatibility with WorkerManage

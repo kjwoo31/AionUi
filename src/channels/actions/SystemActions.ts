@@ -27,8 +27,9 @@ import type { AcpBackend } from '@/types/acpTypes';
 
 export async function getChannelDefaultModel(_platform: PluginType): Promise<TProviderWithModel> {
   try {
-    // Try to get saved model selection
-    const savedModel = await ProcessConfig.get('assistant.telegram.defaultModel');
+    // Try to get saved model selection (platform-specific)
+    const configKey = _platform === 'slack' ? 'assistant.slack.defaultModel' : 'assistant.telegram.defaultModel';
+    const savedModel = await ProcessConfig.get(configKey as any);
     if (savedModel?.id && savedModel?.useModel) {
       // Google Auth provider is a frontend-only virtual provider — it has no
       // entry in model.config. For Google Auth, return a minimal config that

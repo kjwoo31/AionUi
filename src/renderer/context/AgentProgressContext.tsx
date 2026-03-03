@@ -87,10 +87,10 @@ const handleMessage = (message: IResponseMessage) => {
     case 'agent_status': {
       const data = message.data as { status?: string };
       const agentStatus = data?.status;
-      if (agentStatus === 'connecting') {
+      if (agentStatus === 'connecting' || agentStatus === 'reconnecting') {
         progressMap.set(conversation_id, {
           active: true,
-          currentAction: 'Connecting...',
+          currentAction: agentStatus === 'reconnecting' ? 'Reconnecting...' : 'Connecting...',
           status: 'connecting',
           lastUpdate: Date.now(),
         });

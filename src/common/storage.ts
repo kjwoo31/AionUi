@@ -83,6 +83,17 @@ export interface IConfigStorageRefer {
     customAgentId?: string;
     name?: string;
   };
+  // Slack assistant default model
+  'assistant.slack.defaultModel'?: {
+    id: string;
+    useModel: string;
+  };
+  // Slack assistant agent selection
+  'assistant.slack.agent'?: {
+    backend: AcpBackendAll;
+    customAgentId?: string;
+    name?: string;
+  };
 }
 
 export interface IEnvStorageRefer {
@@ -96,7 +107,7 @@ export interface IEnvStorageRefer {
  * Conversation source type - identifies where the conversation was created
  * 会话来源类型 - 标识会话创建的来源
  */
-export type ConversationSource = 'aionui' | 'telegram';
+export type ConversationSource = 'aionui' | 'telegram' | 'slack';
 
 interface IChatConversation<T, Extra> {
   createTime: number;

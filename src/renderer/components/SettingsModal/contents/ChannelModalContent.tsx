@@ -18,9 +18,10 @@ import { useTranslation } from 'react-i18next';
 import { useSettingsViewMode } from '../settingsViewContext';
 import ChannelItem from './channels/ChannelItem';
 import type { ChannelConfig } from './channels/types';
+import SlackConfigForm from './SlackConfigForm';
 import TelegramConfigForm from './TelegramConfigForm';
 
-type ChannelModelConfigKey = 'assistant.telegram.defaultModel';
+type ChannelModelConfigKey = 'assistant.telegram.defaultModel' | 'assistant.slack.defaultModel';
 
 /**
  * Internal hook: wraps useGeminiModelSelection with ConfigStorage persistence
@@ -79,7 +80,7 @@ const useChannelModelSelection = (configKey: ChannelModelConfigKey): GeminiModel
         await ConfigStorage.set(configKey, modelRef);
 
         // Derive platform from configKey and sync to channel system
-        const platform = configKey.replace('assistant.', '').replace('.defaultModel', '') as 'telegram';
+        const platform = configKey.replace('assistant.', '').replace('.defaultModel', '') as 'telegram' | 'slack';
         const agentKey = `assistant.${platform}.agent` as const;
         const currentAgent = await ConfigStorage.get(agentKey);
         await channel.syncChannelSettings
@@ -112,9 +113,13 @@ const ChannelModalContent: React.FC = () => {
   const viewMode = useSettingsViewMode();
   const isPageMode = viewMode === 'page';
 
-  // Plugin state
+  // Plugin state - Telegram
   const [pluginStatus, setPluginStatus] = useState<IChannelPluginStatus | null>(null);
   const [enableLoading, setEnableLoading] = useState(false);
+
+  // Plugin state - Slack
+  const [slackPluginStatus, setSlackPluginStatus] = useState<IChannelPluginStatus | null>(null);
+  const [slackEnableLoading, setSlackEnableLoading] = useState(false);
 
   // Collapse state - true means collapsed (closed), false means expanded (open)
   const [collapseKeys, setCollapseKeys] = useState<Record<string, boolean>>({
@@ -125,6 +130,7 @@ const ChannelModalContent: React.FC = () => {
 
   // Model selection state — uses unified hook with ConfigStorage persistence
   const telegramModelSelection = useChannelModelSelection('assistant.telegram.defaultModel');
+  const slackModelSelection = useChannelModelSelection('assistant.slack.defaultModel');
 
   // Load plugin status
   const loadPluginStatus = useCallback(async () => {
@@ -133,6 +139,8 @@ const ChannelModalContent: React.FC = () => {
       if (result.success && result.data) {
         const telegramPlugin = result.data.find((p) => p.type === 'telegram');
         setPluginStatus(telegramPlugin || null);
+        const slackPlugin = result.data.find((p) => p.type === 'slack');
+        setSlackPluginStatus(slackPlugin || null);
       }
     } catch (error) {
       console.error('[ChannelSettings] Failed to load plugin status:', error);
@@ -149,6 +157,8 @@ const ChannelModalContent: React.FC = () => {
     const unsubscribe = channel.pluginStatusChanged.on(({ status }) => {
       if (status.type === 'telegram') {
         setPluginStatus(status);
+      } else if (status.type === 'slack') {
+        setSlackPluginStatus(status);
       }
     });
     return () => unsubscribe();
@@ -202,6 +212,39 @@ const ChannelModalContent: React.FC = () => {
     }
   };
 
+  // Enable/Disable Slack plugin
+  const handleToggleSlackPlugin = async (enabled: boolean) => {
+    setSlackEnableLoading(true);
+    try {
+      if (enabled) {
+        if (!slackPluginStatus?.hasToken) {
+          Message.warning(t('settings.assistant.tokenRequired', 'Please enter a bot token first'));
+          setSlackEnableLoading(false);
+          return;
+        }
+        const result = await channel.enablePlugin.invoke({ pluginId: 'slack_default', config: {} });
+        if (result.success) {
+          Message.success(t('settings.slack.pluginEnabled', 'Slack bot enabled'));
+          await loadPluginStatus();
+        } else {
+          Message.error(result.msg || t('settings.assistant.enableFailed', 'Failed to enable plugin'));
+        }
+      } else {
+        const result = await channel.disablePlugin.invoke({ pluginId: 'slack_default' });
+        if (result.success) {
+          Message.success(t('settings.slack.pluginDisabled', 'Slack bot disabled'));
+          await loadPluginStatus();
+        } else {
+          Message.error(result.msg || t('settings.assistant.disableFailed', 'Failed to disable plugin'));
+        }
+      }
+    } catch (error: any) {
+      Message.error(error.message);
+    } finally {
+      setSlackEnableLoading(false);
+    }
+  };
+
   // Build channel configurations
   const channels: ChannelConfig[] = useMemo(() => {
     const telegramChannel: ChannelConfig = {
@@ -217,16 +260,20 @@ const ChannelModalContent: React.FC = () => {
       content: <TelegramConfigForm pluginStatus={pluginStatus} modelSelection={telegramModelSelection} onStatusChange={setPluginStatus} />,
     };
 
+    const slackChannel: ChannelConfig = {
+      id: 'slack',
+      title: t('channels.slackTitle', 'Slack'),
+      description: t('channels.slackDesc', 'Chat with AionUi assistant via Slack'),
+      status: 'active',
+      enabled: slackPluginStatus?.enabled || false,
+      disabled: slackEnableLoading,
+      isConnected: slackPluginStatus?.connected || false,
+      botUsername: slackPluginStatus?.botUsername,
+      defaultModel: slackModelSelection.currentModel?.useModel,
+      content: <SlackConfigForm pluginStatus={slackPluginStatus} modelSelection={slackModelSelection} onStatusChange={setSlackPluginStatus} />,
+    };
+
     const comingSoonChannels: ChannelConfig[] = [
-      {
-        id: 'slack',
-        title: t('channels.slackTitle', 'Slack'),
-        description: t('channels.slackDesc', 'Chat with AionUi assistant via Slack'),
-        status: 'coming_soon',
-        enabled: false,
-        disabled: true,
-        content: <div className='text-14px text-t-secondary py-12px'>{t('channels.comingSoonDesc', 'Support for {{channel}} is coming soon', { channel: t('channels.slackTitle', 'Slack') })}</div>,
-      },
       {
         id: 'discord',
         title: t('channels.discordTitle', 'Discord'),
@@ -238,12 +285,13 @@ const ChannelModalContent: React.FC = () => {
       },
     ];
 
-    return [telegramChannel, ...comingSoonChannels];
-  }, [pluginStatus, telegramModelSelection, enableLoading, t]);
+    return [telegramChannel, slackChannel, ...comingSoonChannels];
+  }, [pluginStatus, slackPluginStatus, telegramModelSelection, slackModelSelection, enableLoading, slackEnableLoading, t]);
 
   // Get toggle handler for each channel
   const getToggleHandler = (channelId: string) => {
     if (channelId === 'telegram') return handleTogglePlugin;
+    if (channelId === 'slack') return handleToggleSlackPlugin;
     return undefined;
   };
 

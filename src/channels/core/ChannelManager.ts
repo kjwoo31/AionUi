@@ -11,8 +11,9 @@ import { ActionExecutor } from '../gateway/ActionExecutor';
 import { PluginManager, registerPlugin } from '../gateway/PluginManager';
 import { PairingService } from '../pairing/PairingService';
 import { TelegramPlugin } from '../plugins/telegram/TelegramPlugin';
+import { SlackPlugin } from '../plugins/slack/SlackPlugin';
 import { resolveChannelConvType } from '../types';
-import type { IChannelPluginConfig, PluginType } from '../types';
+import type { ChannelPlatform, IChannelPluginConfig, PluginType } from '../types';
 import { SessionManager } from './SessionManager';
 
 /**
@@ -45,6 +46,7 @@ export class ChannelManager {
     // Private constructor for singleton pattern
     // Register available plugins
     registerPlugin('telegram', TelegramPlugin);
+    registerPlugin('slack', SlackPlugin);
   }
 
   /**
@@ -221,6 +223,18 @@ export class ChannelManager {
       }
     }
 
+    if (pluginType === 'slack') {
+      const token = config.token as string | undefined;
+      const appToken = config.appToken as string | undefined;
+      if (token || appToken) {
+        credentials = {
+          ...(credentials || {}),
+          ...(token ? { token } : {}),
+          ...(appToken ? { appToken } : {}),
+        };
+      }
+    }
+
     const pluginConfig: IChannelPluginConfig = {
       id: pluginId,
       type: pluginType,
@@ -289,6 +303,15 @@ export class ChannelManager {
       };
     }
 
+    if (pluginType === 'slack') {
+      const result = await SlackPlugin.testConnection(token);
+      return {
+        success: result.success,
+        botUsername: result.botInfo?.username,
+        error: result.error,
+      };
+    }
+
     return { success: false, error: `Unknown plugin type: ${pluginType}` };
   }
 
@@ -318,7 +341,7 @@ export class ChannelManager {
    * which conversation to use. For gemini type changes, also updates the
    * model field on existing conversations.
    */
-  async syncChannelSettings(platform: 'telegram', agent: { backend: string; customAgentId?: string; name?: string }, model?: { id: string; useModel: string }): Promise<{ success: boolean; error?: string }> {
+  async syncChannelSettings(platform: ChannelPlatform, agent: { backend: string; customAgentId?: string; name?: string }, model?: { id: string; useModel: string }): Promise<{ success: boolean; error?: string }> {
     if (!this.initialized || !this.sessionManager) {
       return { success: false, error: 'Channel manager not initialized' };
     }

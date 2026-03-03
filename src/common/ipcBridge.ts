@@ -522,7 +522,7 @@ export const channel = {
   getActiveSessions: bridge.buildProvider<IBridgeResponse<IChannelSession[]>, void>('channel.get-active-sessions'),
 
   // Settings Sync
-  syncChannelSettings: bridge.buildProvider<IBridgeResponse, { platform: 'telegram'; agent: { backend: string; customAgentId?: string; name?: string }; model?: { id: string; useModel: string } }>('channel.sync-channel-settings'),
+  syncChannelSettings: bridge.buildProvider<IBridgeResponse, { platform: 'telegram' | 'slack'; agent: { backend: string; customAgentId?: string; name?: string }; model?: { id: string; useModel: string } }>('channel.sync-channel-settings'),
 
   // Events
   pairingRequested: bridge.buildEmitter<IChannelPairingRequest>('channel.pairing-requested'),

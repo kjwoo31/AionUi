@@ -19,6 +19,8 @@ import type { PluginMessageHandler } from '../plugins/BasePlugin';
 import { getChannelConversationName, resolveChannelConvType } from '../types';
 import { createMainMenuKeyboard, createToolConfirmationKeyboard } from '../plugins/telegram/TelegramKeyboards';
 import { escapeHtml } from '../plugins/telegram/TelegramAdapter';
+import { createMainMenuBlocks, createToolConfirmationBlocks, createErrorRecoveryBlocks } from '../plugins/slack/SlackKeyboards';
+import { escapeSlackMrkdwn, htmlToSlackMrkdwn } from '../plugins/slack/SlackAdapter';
 import type { ChannelAgentType, IUnifiedIncomingMessage, IUnifiedOutgoingMessage, PluginType } from '../types';
 import type { PluginManager } from './PluginManager';
 import type { AcpBackend } from '@/types/acpTypes';
@@ -29,6 +31,7 @@ import type { AcpBackend } from '@/types/acpTypes';
  * Get main menu reply markup based on platform
  */
 function getMainMenuMarkup(platform: PluginType) {
+  if (platform === 'slack') return createMainMenuBlocks();
   return createMainMenuKeyboard();
 }
 
@@ -43,6 +46,7 @@ function getResponseActionsMarkup(_platform: PluginType, _text?: string): undefi
  * Get tool confirmation markup based on platform
  */
 function getToolConfirmationMarkup(platform: PluginType, callId: string, options: Array<{ label: string; value: string }>, title?: string, description?: string) {
+  if (platform === 'slack') return createToolConfirmationBlocks(callId, options);
   return createToolConfirmationKeyboard(callId, options);
 }
 
@@ -50,6 +54,7 @@ function getToolConfirmationMarkup(platform: PluginType, callId: string, options
  * Get error recovery markup based on platform
  */
 function getErrorRecoveryMarkup(platform: PluginType, errorMessage?: string) {
+  if (platform === 'slack') return createErrorRecoveryBlocks();
   return createMainMenuKeyboard();
 }
 
@@ -57,6 +62,7 @@ function getErrorRecoveryMarkup(platform: PluginType, errorMessage?: string) {
  * Escape/format text for platform
  */
 function formatTextForPlatform(text: string, platform: PluginType): string {
+  if (platform === 'slack') return escapeSlackMrkdwn(text);
   return escapeHtml(text);
 }
 
@@ -161,7 +167,12 @@ function convertTMessageToOutgoing(message: TMessage, platform: PluginType, isCo
         // 根据确认类型生成选项
         // Generate options based on confirmation type
         const options = getConfirmationOptions(confirmingTool.confirmationDetails.type);
-        const confirmText = toolLines.join('\n') + '\n\n' + getConfirmationPrompt(confirmingTool.confirmationDetails);
+        let confirmText = toolLines.join('\n') + '\n\n' + getConfirmationPrompt(confirmingTool.confirmationDetails);
+
+        // Convert HTML to Slack mrkdwn if needed
+        if (platform === 'slack') {
+          confirmText = htmlToSlackMrkdwn(confirmText);
+        }
 
         return {
           type: 'text',
@@ -312,12 +323,12 @@ export class ActionExecutor {
       // Get or create session (scoped by chatId for per-chat isolation)
       let session = this.sessionManager.getSession(channelUser.id, chatId);
       if (!session || !session.conversationId) {
-        const source = 'telegram';
+        const source = platform as import('@/common/storage').ConversationSource;
 
         // Read selected agent for this platform (defaults to Gemini)
         let savedAgent: unknown = undefined;
         try {
-          savedAgent = await ProcessConfig.get('assistant.telegram.agent');
+          savedAgent = await ProcessConfig.get(`assistant.${platform}.agent` as any);
         } catch {
           // ignore
         }

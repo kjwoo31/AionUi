@@ -32,6 +32,8 @@ const MessageAgentStatus: React.FC<MessageAgentStatusProps> = ({ message }) => {
         return <Badge status='success' text={t('acp.status.authenticated', { agent: backend })} />;
       case 'session_active':
         return <Badge status='success' text={t('acp.status.session_active', { agent: backend })} />;
+      case 'reconnecting':
+        return <Badge status='processing' text={t('acp.status.reconnecting', { agent: backend })} />;
       case 'disconnected':
         return <Badge status='default' text={t('acp.status.disconnected', { agent: backend })} />;
       case 'error':

@@ -397,14 +397,22 @@ class AcpAgentManager extends BaseAgentManager<AcpAgentManagerData, AcpPermissio
         if (this.isFirstMessage) {
           this.isFirstMessage = false;
         }
-        // Note: cronBusyGuard.setProcessing(false) is not called here
-        // because the response streaming is still in progress.
-        // It will be cleared when the conversation ends or on error.
+        // Clean up state on failure (timeout, error, etc.)
+        // On success, cronBusyGuard is cleared by the finish signal in onSignalEvent
+        if (!result.success) {
+          cronBusyGuard.setProcessing(this.conversation_id, false);
+          this.status = 'finished';
+        }
         return result;
       }
       const agentSendStart = Date.now();
       const result = await this.agent.sendMessage(data);
       console.log(`[ACP-PERF] manager: agent.sendMessage completed ${Date.now() - agentSendStart}ms (total manager.sendMessage: ${Date.now() - managerSendStart}ms)`);
+      // Clean up state on failure (timeout, error, etc.)
+      if (!result.success) {
+        cronBusyGuard.setProcessing(this.conversation_id, false);
+        this.status = 'finished';
+      }
       return result;
     } catch (e) {
       cronBusyGuard.setProcessing(this.conversation_id, false);

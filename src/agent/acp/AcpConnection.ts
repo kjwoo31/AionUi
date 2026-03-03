@@ -100,13 +100,17 @@ export class AcpConnection {
   public onEndTurn: () => void = () => {}; // Handler for end_turn messages
   public onFileOperation: (operation: { method: string; path: string; content?: string; sessionId: string }) => void = () => {};
   // Disconnect callback - called when child process exits unexpectedly during runtime
-  public onDisconnect: (error: { code: number | null; signal: NodeJS.Signals | null }) => void = () => {};
+  public onDisconnect: (error: { code: number | null; signal: NodeJS.Signals | null; stderr?: string }) => void = () => {};
 
   // Track if initial setup is complete (to distinguish startup errors from runtime exits)
   private isSetupComplete = false;
 
   // Track if child process was spawned with detached: true (needs process group kill)
   private isDetached = false;
+
+  // Ring buffer for recent stderr output (kept across startup/runtime for crash diagnostics)
+  private static readonly STDERR_RING_MAX = 4096;
+  private stderrRing = '';
 
   /**
    * Prepare a clean environment for npx-based ACP backends.
@@ -330,17 +334,24 @@ export class AcpConnection {
 
     let spawnError: Error | null = null;
 
-    // Collect stderr output (capped at 2KB) for diagnostics on early crash
+    // Collect stderr output for diagnostics (startup uses local var, runtime uses ring buffer)
     const STDERR_MAX = 2048;
     let stderrOutput = '';
+    this.stderrRing = '';
     child.stderr?.on('data', (data: Buffer) => {
       const chunk = data.toString();
       console.error(`[ACP ${backend} STDERR]:`, chunk);
+      // Startup-phase local capture (used by processExitPromise below)
       if (stderrOutput.length < STDERR_MAX) {
         stderrOutput += chunk;
         if (stderrOutput.length > STDERR_MAX) {
           stderrOutput = stderrOutput.slice(0, STDERR_MAX);
         }
+      }
+      // Runtime ring buffer — keeps the last N chars for crash diagnostics
+      this.stderrRing += chunk;
+      if (this.stderrRing.length > AcpConnection.STDERR_RING_MAX) {
+        this.stderrRing = this.stderrRing.slice(-AcpConnection.STDERR_RING_MAX);
       }
     });
 
@@ -443,6 +454,9 @@ export class AcpConnection {
    * Similar to Codex's handleProcessExit implementation
    */
   private handleProcessExit(code: number | null, signal: NodeJS.Signals | null): void {
+    // Snapshot stderr before clearing state
+    const stderr = this.stderrRing.trim() || undefined;
+
     // 1. Reject all pending requests with clear error message
     for (const [_id, request] of this.pendingRequests) {
       if (request.timeoutId) {
@@ -462,9 +476,10 @@ export class AcpConnection {
     this.configOptions = null;
     this.models = null;
     this.child = null;
+    this.stderrRing = '';
 
-    // 3. Notify AcpAgent about disconnect
-    this.onDisconnect({ code, signal });
+    // 3. Notify AcpAgent about disconnect (include stderr for UI diagnostics)
+    this.onDisconnect({ code, signal, stderr });
   }
 
   private sendRequest<T = unknown>(method: string, params?: Record<string, unknown>): Promise<T> {
@@ -477,18 +492,19 @@ export class AcpConnection {
     };
 
     return new Promise((resolve, reject) => {
-      // Use longer timeout for session/prompt requests as they involve LLM processing
-      // Complex tasks like document processing may need significantly more time
-      const timeoutDuration = method === 'session/prompt' ? 300000 : 60000; // 5 minutes for prompts, 1 minute for others
+      // session/prompt: no timeout — relies on child process exit handler (handleProcessExit)
+      // for cleanup. Teams/plan-approval can idle for unbounded periods while subagents work.
+      // Other methods: 60s timeout as safety net.
+      const timeoutDuration = method === 'session/prompt' ? 0 : 60000;
       const startTime = Date.now();
 
       const createTimeoutHandler = () => {
+        if (timeoutDuration === 0) return undefined;
         return setTimeout(() => {
           const request = this.pendingRequests.get(id);
           if (request && !request.isPaused) {
             this.pendingRequests.delete(id);
-            const timeoutMsg = method === 'session/prompt' ? `LLM request timed out after ${timeoutDuration / 1000} seconds` : `Request ${method} timed out after ${timeoutDuration / 1000} seconds`;
-            reject(new Error(timeoutMsg));
+            reject(new Error(`Request ${method} timed out after ${timeoutDuration / 1000} seconds`));
           }
         }, timeoutDuration);
       };

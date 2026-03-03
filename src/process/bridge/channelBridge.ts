@@ -46,6 +46,13 @@ export function initChannelBridge(): void {
         };
       });
 
+      // Use PluginManager for live status if available (includes bot info, active user count)
+      const manager = getChannelManager();
+      const pm = manager.getPluginManager();
+      if (pm) {
+        return { success: true, data: pm.getPluginStatuses() };
+      }
+
       return { success: true, data: statuses };
     } catch (error: any) {
       console.error('[ChannelBridge] getPluginStatus error:', error);

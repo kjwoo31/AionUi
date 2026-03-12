@@ -7,10 +7,11 @@
 import { App, type BlockAction, type SlackEventMiddlewareArgs } from '@slack/bolt';
 import { WebClient } from '@slack/web-api';
 
+import { getDatabase } from '@/process/database';
 import type { BotInfo, IChannelPluginConfig, IUnifiedIncomingMessage, IUnifiedOutgoingMessage, PluginType } from '../../types';
 import { BasePlugin } from '../BasePlugin';
 import { SLACK_MESSAGE_LIMIT, parseSlackChatId, splitMessage, toSlackSendParams, toUnifiedIncomingMessage } from './SlackAdapter';
-import { extractAction, extractCategory } from './SlackKeyboards';
+import { buildAppHomeBlocks, type ConversationDisplayInfo, extractAction, extractCategory } from './SlackKeyboards';
 
 /**
  * SlackPlugin - Slack Bot integration via Socket Mode
@@ -213,6 +214,11 @@ export class SlackPlugin extends BasePlugin {
       await this.handleBlockAction(action as any, body as BlockAction);
     });
 
+    // Handle App Home tab opened
+    this.app.event('app_home_opened', async ({ event }) => {
+      await this.publishHomeView(event.user);
+    });
+
     // Global error handler
     this.app.error(async (error) => {
       const errorMessage = error instanceof Error ? error.message : String(error);
@@ -266,14 +272,31 @@ export class SlackPlugin extends BasePlugin {
     const category = extractCategory(actionId);
 
     // Determine chatId from body — channel may be in body.channel or body.container
-    const channelId = body.channel?.id || (body.container as any)?.channel_id;
+    let channelId = body.channel?.id || (body.container as any)?.channel_id;
+
+    // App Home tab actions have no channel — open a DM channel instead
     if (!channelId) {
-      console.warn('[SlackPlugin] Cannot determine chatId from block action body');
-      return;
+      channelId = (await this.openDmChannel(userId)) ?? undefined;
+      if (!channelId) {
+        console.warn('[SlackPlugin] Cannot determine chatId from block action body');
+        return;
+      }
     }
     // Include thread_ts in chatId for thread-based session isolation
     const threadTs = (body.message as any)?.thread_ts || (body.container as any)?.thread_ts;
     const chatId = threadTs ? `${channelId}:${threadTs}` : channelId;
+
+    // Handle App Home "New Chat" button
+    if (category === 'home' && extractAction(actionId) === 'new_chat') {
+      const unifiedMessage = this.createActionMessage(userId, chatId, actionId);
+      if (unifiedMessage && this.messageHandler) {
+        unifiedMessage.content.type = 'action';
+        unifiedMessage.content.text = 'session.new';
+        unifiedMessage.action = { type: 'system', name: 'session.new', params: {} };
+        void this.messageHandler(unifiedMessage).catch((error) => console.error('[SlackPlugin] Error handling home new_chat:', error));
+      }
+      return;
+    }
 
     // Handle tool confirmation callback: confirm:{callId}:{value}
     if (category === 'confirm') {
@@ -342,6 +365,43 @@ export class SlackPlugin extends BasePlugin {
       return;
     }
 
+    // Handle conversation join callback: conversation:{conversationId}
+    if (category === 'conversation') {
+      const conversationId = extractAction(actionId);
+      const unifiedMessage = this.createActionMessage(userId, chatId, actionId);
+      if (unifiedMessage && this.messageHandler) {
+        unifiedMessage.content.type = 'action';
+        unifiedMessage.content.text = 'session.join';
+        unifiedMessage.action = {
+          type: 'system',
+          name: 'session.join',
+          params: { conversationId },
+        };
+        // Don't await - process in background
+        void this.messageHandler(unifiedMessage)
+          .then(async () => {
+            // Remove inline buttons after selection (message context)
+            try {
+              const messageTs = body.message?.ts;
+              if (messageTs && this.app) {
+                await this.app.client.chat.update({
+                  channel: channelId,
+                  ts: messageTs,
+                  text: body.message?.text || 'Conversation joined',
+                  blocks: [],
+                });
+              }
+            } catch (editError) {
+              console.debug('[SlackPlugin] Failed to remove conversation list buttons (ignored):', editError);
+            }
+            // Refresh App Home view
+            void this.publishHomeView(userId);
+          })
+          .catch((error) => console.error('[SlackPlugin] Error handling conversation join:', error));
+      }
+      return;
+    }
+
     // Other action types — forward through messageHandler
     const unifiedMessage = this.createActionMessage(userId, chatId, actionId);
     if (unifiedMessage && this.messageHandler) {
@@ -378,6 +438,65 @@ export class SlackPlugin extends BasePlugin {
       },
       timestamp: Date.now(),
     };
+  }
+
+  /**
+   * Publish the App Home view for a user.
+   * Called on `app_home_opened` and after conversation changes.
+   */
+  async publishHomeView(slackUserId: string): Promise<void> {
+    if (!this.app) return;
+
+    // Load conversations from DB
+    const agentEmojis: Record<string, string> = {
+      gemini: '🤖',
+      acp: '🧠',
+      codex: '⚡',
+      'openclaw-gateway': '🦞',
+      nanobot: '🔬',
+    };
+
+    let convList: ConversationDisplayInfo[] = [];
+    try {
+      const db = getDatabase();
+      const result = db.getUserConversations(undefined, 0, 20);
+      convList = (result.data || []).map((conv) => {
+        const updated = new Date(conv.modifyTime);
+        const dateStr = `${updated.getMonth() + 1}/${updated.getDate()}`;
+        const emoji = agentEmojis[conv.type] || '💬';
+        const name = (conv.name || 'Untitled').slice(0, 40);
+        return { id: conv.id, name: `${name} (${dateStr})`, emoji, date: dateStr, isCurrent: false };
+      });
+    } catch (error) {
+      console.warn('[SlackPlugin] Failed to load conversations for home view:', error);
+    }
+
+    try {
+      await this.app.client.views.publish({
+        user_id: slackUserId,
+        view: {
+          type: 'home',
+          blocks: buildAppHomeBlocks(convList),
+        },
+      });
+    } catch (error) {
+      console.error('[SlackPlugin] Failed to publish home view:', error);
+    }
+  }
+
+  /**
+   * Open (or retrieve) a DM channel with a user.
+   * Used when handling Home tab button clicks that need to send DM responses.
+   */
+  private async openDmChannel(userId: string): Promise<string | null> {
+    if (!this.app) return null;
+    try {
+      const result = await this.app.client.conversations.open({ users: userId });
+      return (result.channel as any)?.id || null;
+    } catch (error) {
+      console.error('[SlackPlugin] Failed to open DM channel:', error);
+      return null;
+    }
   }
 
   /**

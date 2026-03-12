@@ -46,9 +46,9 @@ export function createMainMenuBlocks(): any[] {
   return [
     actionsBlock('main_menu', [
       { text: '🆕 New Chat', actionId: 'session:new' },
+      { text: '📂 Join', actionId: 'session:list' },
       { text: '🔄 Agent', actionId: 'agent:select' },
       { text: '📊 Status', actionId: 'session:status' },
-      { text: '❓ Help', actionId: 'help:main' },
     ]),
   ];
 }
@@ -152,6 +152,65 @@ export function createToolConfirmationBlocks(callId: string, options: Array<{ la
   return blocks;
 }
 
+// ==================== Pairing Blocks ====================
+
+/**
+ * Pairing code display blocks with refresh option.
+ * Equivalent to Telegram's createPairingCodeKeyboard.
+ */
+export function createPairingCodeBlocks(): any[] {
+  return [
+    actionsBlock('pairing_code', [
+      { text: '🔄 Refresh Code', actionId: 'pairing:refresh' },
+      { text: '❓ Pairing Help', actionId: 'pairing:help' },
+    ]),
+  ];
+}
+
+/**
+ * Pairing status check blocks.
+ * Equivalent to Telegram's createPairingStatusKeyboard.
+ */
+export function createPairingStatusBlocks(): any[] {
+  return [
+    actionsBlock('pairing_status', [
+      { text: '🔄 Check Status', actionId: 'pairing:check' },
+      { text: '🔄 Get New Code', actionId: 'pairing:refresh' },
+    ]),
+  ];
+}
+
+// ==================== Session Control ====================
+
+/**
+ * Session control blocks.
+ * Equivalent to Telegram's createSessionControlKeyboard.
+ */
+export function createSessionControlBlocks(): any[] {
+  return [
+    actionsBlock('session_control', [
+      { text: '🆕 New Session', actionId: 'session:new' },
+      { text: '📊 Session Status', actionId: 'session:status' },
+    ]),
+  ];
+}
+
+// ==================== Help Blocks ====================
+
+/**
+ * Help menu blocks.
+ * Equivalent to Telegram's createHelpKeyboard.
+ */
+export function createHelpBlocks(): any[] {
+  return [
+    actionsBlock('help_menu', [
+      { text: '🤖 Features', actionId: 'help:features' },
+      { text: '🔗 Pairing Guide', actionId: 'help:pairing' },
+      { text: '💬 Tips', actionId: 'help:tips' },
+    ]),
+  ];
+}
+
 // ==================== Error Recovery ====================
 
 /**
@@ -164,6 +223,110 @@ export function createErrorRecoveryBlocks(): any[] {
       { text: '🆕 New Session', actionId: 'session:new' },
     ]),
   ];
+}
+
+// ==================== App Home View ====================
+
+/**
+ * Build the App Home view blocks.
+ * Shows a "+ New Chat" button and conversation history list.
+ */
+export function buildAppHomeBlocks(conversations: ConversationDisplayInfo[]): any[] {
+  const blocks: any[] = [
+    {
+      type: 'header',
+      text: { type: 'plain_text', text: 'AionUi Assistant', emoji: true },
+    },
+    {
+      type: 'actions',
+      block_id: 'home_actions',
+      elements: [
+        {
+          type: 'button',
+          text: { type: 'plain_text', text: '+ New Chat', emoji: true },
+          action_id: 'home:new_chat',
+          style: 'primary',
+        },
+      ],
+    },
+    { type: 'divider' },
+  ];
+
+  if (conversations.length === 0) {
+    blocks.push({
+      type: 'section',
+      text: { type: 'mrkdwn', text: '_No conversations yet. Click "+ New Chat" to start._' },
+    });
+    return blocks;
+  }
+
+  blocks.push({
+    type: 'section',
+    text: { type: 'mrkdwn', text: '*History*' },
+  });
+
+  for (const conv of conversations) {
+    const prefix = conv.isCurrent ? '✓ ' : '';
+    const title = `${prefix}${conv.emoji} *${conv.name}*`;
+    blocks.push({
+      type: 'section',
+      text: { type: 'mrkdwn', text: title },
+      accessory: {
+        type: 'button',
+        text: { type: 'plain_text', text: 'Continue', emoji: true },
+        action_id: `conversation:${conv.id}`,
+      },
+    });
+  }
+
+  return blocks;
+}
+
+// ==================== Conversation List ====================
+
+/**
+ * Conversation display info for list blocks
+ */
+export interface ConversationDisplayInfo {
+  id: string;
+  name: string;
+  emoji: string;
+  date: string;
+  isCurrent: boolean;
+}
+
+/**
+ * Conversation list blocks for "Join existing conversation".
+ * Shows recent conversations as buttons (2 per row).
+ * Action ID: `conversation:{conversationId}` (parsed via extractAction).
+ */
+export function createConversationListBlocks(conversations: ConversationDisplayInfo[]): any[] {
+  if (conversations.length === 0) {
+    return [
+      {
+        type: 'section',
+        text: { type: 'mrkdwn', text: 'No conversations found.' },
+      },
+    ];
+  }
+
+  const blocks: any[] = [];
+
+  for (let i = 0; i < conversations.length; i += 2) {
+    const rowButtons: Array<{ text: string; actionId: string }> = [];
+
+    for (let j = i; j < Math.min(i + 2, conversations.length); j++) {
+      const conv = conversations[j];
+      const prefix = conv.isCurrent ? '✓ ' : '';
+      // Slack button text limit is 75 chars
+      const label = `${prefix}${conv.emoji} ${conv.name}`.slice(0, 70);
+      rowButtons.push({ text: label, actionId: `conversation:${conv.id}` });
+    }
+
+    blocks.push(actionsBlock(`conv_list_${i}`, rowButtons));
+  }
+
+  return blocks;
 }
 
 // ==================== Action ID Utilities ====================

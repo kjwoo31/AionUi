@@ -65,6 +65,8 @@ export interface IRegisteredAction {
 export const SystemActionNames = {
   SESSION_NEW: 'session.new',
   SESSION_STATUS: 'session.status',
+  SESSION_LIST: 'session.list',
+  SESSION_JOIN: 'session.join',
   HELP_SHOW: 'help.show',
   HELP_FEATURES: 'help.features',
   HELP_PAIRING: 'help.pairing',

@@ -163,7 +163,7 @@ export class ChannelMessageService {
       // Check conversation source, enable yoloMode if it's from a Channel
       const db = getDatabase();
       const dbResult = db.getConversation(conversationId);
-      const isFromChannel = dbResult.success && dbResult.data?.source === 'telegram';
+      const isFromChannel = dbResult.success && dbResult.data?.source != null && dbResult.data.source !== 'aionui';
 
       task = await WorkerManage.getTaskByIdRollbackBuild(conversationId, {
         yoloMode: isFromChannel,

@@ -137,6 +137,40 @@ export function createToolConfirmationKeyboard(callId: string, options: Array<{ 
   return keyboard;
 }
 
+// ==================== Conversation List ====================
+
+/**
+ * Conversation display info for list keyboard
+ */
+export interface ConversationDisplayInfo {
+  id: string;
+  name: string;
+  emoji: string;
+  date: string;
+  isCurrent: boolean;
+}
+
+/**
+ * Conversation list inline keyboard for "Join existing conversation".
+ * Shows recent conversations as buttons (2 per row).
+ */
+export function createConversationListKeyboard(conversations: ConversationDisplayInfo[]): InlineKeyboard {
+  const keyboard = new InlineKeyboard();
+
+  for (let i = 0; i < conversations.length; i++) {
+    const conv = conversations[i];
+    const prefix = conv.isCurrent ? '✓ ' : '';
+    const label = `${prefix}${conv.emoji} ${conv.name}`;
+    keyboard.text(label, `conversation:${conv.id}`);
+
+    if ((i + 1) % 2 === 0 && i < conversations.length - 1) {
+      keyboard.row();
+    }
+  }
+
+  return keyboard;
+}
+
 // ==================== Keyboard Utilities ====================
 
 /**

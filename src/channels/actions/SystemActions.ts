@@ -6,13 +6,14 @@
 
 import { acpDetector } from '@/agent/acp/AcpDetector';
 import type { TProviderWithModel } from '@/common/storage';
+import { getDatabase } from '@/process/database';
 import { ProcessConfig } from '@/process/initStorage';
 import { ConversationService } from '@/process/services/conversationService';
 import WorkerManage from '@/process/WorkerManage';
 import { getChannelMessageService } from '../agent/ChannelMessageService';
 import { getChannelManager } from '../core/ChannelManager';
-import type { AgentDisplayInfo } from '../plugins/telegram/TelegramKeyboards';
-import { createAgentSelectionKeyboard, createHelpKeyboard, createMainMenuKeyboard, createSessionControlKeyboard } from '../plugins/telegram/TelegramKeyboards';
+import { createAgentSelectionKeyboard, createHelpKeyboard, createMainMenuKeyboard, createSessionControlKeyboard, createConversationListKeyboard, type AgentDisplayInfo, type ConversationDisplayInfo as TgConversationDisplayInfo } from '../plugins/telegram/TelegramKeyboards';
+import { createAgentSelectionBlocks, createHelpBlocks, createMainMenuBlocks, createSessionControlBlocks, type ConversationDisplayInfo as SlackConversationDisplayInfo, createConversationListBlocks } from '../plugins/slack/SlackKeyboards';
 import { getChannelConversationName, resolveChannelConvType } from '../types';
 import type { ChannelAgentType, PluginType } from '../types';
 import type { ActionHandler, IRegisteredAction } from './types';
@@ -88,6 +89,33 @@ export async function getChannelDefaultModel(_platform: PluginType): Promise<TPr
   };
 }
 
+// ==================== Platform-specific Markup Helpers ====================
+
+function getMainMenuMarkup(platform: string) {
+  if (platform === 'slack') return createMainMenuBlocks();
+  return createMainMenuKeyboard();
+}
+
+function getSessionControlMarkup(platform: string) {
+  if (platform === 'slack') return createSessionControlBlocks();
+  return createSessionControlKeyboard();
+}
+
+function getHelpMarkup(platform: string) {
+  if (platform === 'slack') return createHelpBlocks();
+  return createHelpKeyboard();
+}
+
+function getAgentSelectionMarkup(platform: string, availableAgents: AgentDisplayInfo[], currentAgent?: ChannelAgentType) {
+  if (platform === 'slack') return createAgentSelectionBlocks(availableAgents, currentAgent);
+  return createAgentSelectionKeyboard(availableAgents, currentAgent);
+}
+
+function getConversationListMarkup(platform: string, conversations: Array<{ id: string; name: string; emoji: string; date: string; isCurrent: boolean }>) {
+  if (platform === 'slack') return createConversationListBlocks(conversations as SlackConversationDisplayInfo[]);
+  return createConversationListKeyboard(conversations as TgConversationDisplayInfo[]);
+}
+
 /**
  * SystemActions - Handlers for system-level actions
  *
@@ -129,12 +157,12 @@ export const handleSessionNew: ActionHandler = async (context) => {
   sessionManager.clearSession(context.channelUser.id, context.chatId);
 
   const platform = context.platform;
-  const source = 'telegram' as const;
+  const source = platform as import('@/common/storage').ConversationSource;
 
   // Selected agent (defaults to Gemini)
   let savedAgent: unknown = undefined;
   try {
-    savedAgent = await ProcessConfig.get('assistant.telegram.agent');
+    savedAgent = await ProcessConfig.get(`assistant.${platform}.agent` as any);
   } catch {
     // ignore
   }
@@ -200,7 +228,7 @@ export const handleSessionNew: ActionHandler = async (context) => {
     type: 'text',
     text: `🆕 <b>New Session Created</b>\n\nSession ID: <code>${session.id.slice(-8)}</code>\n\nYou can start a new conversation now!`,
     parseMode: 'HTML',
-    replyMarkup: createMainMenuKeyboard(),
+    replyMarkup: getMainMenuMarkup(platform),
   });
 };
 
@@ -223,7 +251,7 @@ export const handleSessionStatus: ActionHandler = async (context) => {
       type: 'text',
       text: '📊 <b>Session Status</b>\n\nNo active session.\n\nSend a message to start a new conversation, or tap the "New Chat" button.',
       parseMode: 'HTML',
-      replyMarkup: createSessionControlKeyboard(),
+      replyMarkup: getSessionControlMarkup(context.platform),
     });
   }
 
@@ -234,67 +262,195 @@ export const handleSessionStatus: ActionHandler = async (context) => {
     type: 'text',
     text: ['📊 <b>Session Status</b>', '', `🤖 Agent: <code>${session.agentType}</code>`, `⏱ Duration: ${duration} min`, `📝 Last activity: ${lastActivity} sec ago`, `🔖 Session ID: <code>${session.id.slice(-8)}</code>`].join('\n'),
     parseMode: 'HTML',
-    replyMarkup: createSessionControlKeyboard(),
+    replyMarkup: getSessionControlMarkup(context.platform),
+  });
+};
+
+/**
+ * Handle session.list - Show list of existing conversations to join
+ */
+export const handleSessionList: ActionHandler = async (context) => {
+  const db = getDatabase();
+  const platform = context.platform;
+
+  // Get recent conversations (all sources)
+  const result = db.getUserConversations(undefined, 0, 10);
+  const conversations = result.data || [];
+
+  if (conversations.length === 0) {
+    return createSuccessResponse({
+      type: 'text',
+      text: '📂 <b>No conversations found.</b>\n\nSend a message to start a new conversation.',
+      parseMode: 'HTML',
+      replyMarkup: getMainMenuMarkup(platform),
+    });
+  }
+
+  // Get current session to mark current conversation
+  const manager = getChannelManager();
+  const sessionManager = manager.getSessionManager();
+  const userId = context.channelUser?.id;
+  const currentSession = userId && sessionManager ? sessionManager.getSession(userId, context.chatId) : null;
+  const currentConvId = currentSession?.conversationId;
+
+  // Map to display format
+  const agentEmojis: Record<string, string> = {
+    gemini: '🤖',
+    acp: '🧠',
+    codex: '⚡',
+    'openclaw-gateway': '🦞',
+    nanobot: '🔬',
+  };
+
+  const displayList = conversations.map((conv) => {
+    const updated = new Date(conv.modifyTime);
+    const dateStr = `${updated.getMonth() + 1}/${updated.getDate()}`;
+    const emoji = agentEmojis[conv.type] || '💬';
+    // Truncate name for button display
+    const name = (conv.name || 'Untitled').slice(0, 30);
+
+    return {
+      id: conv.id,
+      name: `${name} (${dateStr})`,
+      emoji,
+      date: dateStr,
+      isCurrent: conv.id === currentConvId,
+    };
+  });
+
+  return createSuccessResponse({
+    type: 'text',
+    text: ['📂 <b>Join Conversation</b>', '', 'Select a conversation to continue:'].join('\n'),
+    parseMode: 'HTML',
+    replyMarkup: getConversationListMarkup(platform, displayList),
+  });
+};
+
+/**
+ * Handle session.join - Join an existing conversation
+ */
+export const handleSessionJoin: ActionHandler = async (context, params) => {
+  const manager = getChannelManager();
+  const sessionManager = manager.getSessionManager();
+  const platform = context.platform;
+
+  if (!sessionManager) {
+    return createErrorResponse('Session manager not available');
+  }
+
+  if (!context.channelUser) {
+    return createErrorResponse('User not authorized');
+  }
+
+  const conversationId = params?.conversationId;
+  if (!conversationId) {
+    return createErrorResponse('No conversation selected');
+  }
+
+  // Verify conversation exists
+  const db = getDatabase();
+  const convResult = db.getConversation(conversationId);
+  if (!convResult.success || !convResult.data) {
+    return createErrorResponse('Conversation not found');
+  }
+
+  const conv = convResult.data;
+
+  // Clear existing session and agent for this user+chat
+  const existingSession = sessionManager.getSession(context.channelUser.id, context.chatId);
+  if (existingSession) {
+    const messageService = getChannelMessageService();
+    await messageService.clearContext(existingSession.id);
+
+    if (existingSession.conversationId) {
+      try {
+        WorkerManage.kill(existingSession.conversationId);
+      } catch (err) {
+        console.warn(`[SystemActions] Failed to kill old conversation:`, err);
+      }
+    }
+  }
+  sessionManager.clearSession(context.channelUser.id, context.chatId);
+
+  // Create session pointing to the selected conversation
+  const { convType } = resolveChannelConvType(conv.type);
+  const agentType = convType as ChannelAgentType;
+  sessionManager.createSessionWithConversation(context.channelUser, conversationId, agentType, undefined, context.chatId);
+
+  const agentNames: Record<string, string> = {
+    gemini: '🤖 Gemini',
+    acp: '🧠 Claude',
+    codex: '⚡ Codex',
+    'openclaw-gateway': '🦞 OpenClaw',
+  };
+  const agentName = agentNames[conv.type] || conv.type;
+  const convName = conv.name || 'Untitled';
+
+  return createSuccessResponse({
+    type: 'text',
+    text: [`📂 <b>Joined Conversation</b>`, '', `<b>${convName}</b>`, `Agent: ${agentName}`, '', 'Send a message to continue the conversation.'].join('\n'),
+    parseMode: 'HTML',
+    replyMarkup: getMainMenuMarkup(platform),
   });
 };
 
 /**
  * Handle help.show - Show help menu
  */
-export const handleHelpShow: ActionHandler = async (_context) => {
+export const handleHelpShow: ActionHandler = async (context) => {
   return createSuccessResponse({
     type: 'text',
     text: ['❓ <b>AionUi Assistant</b>', '', 'A remote assistant to interact with AionUi via Telegram.', '', '<b>Common Actions:</b>', '• 🆕 New Chat - Start a new session', '• 📊 Status - View current session status', '• ❓ Help - Show this help message', '', 'Send a message to chat with the AI assistant.'].join('\n'),
     parseMode: 'HTML',
-    replyMarkup: createHelpKeyboard(),
+    replyMarkup: getHelpMarkup(context.platform),
   });
 };
 
 /**
  * Handle help.features - Show feature introduction
  */
-export const handleHelpFeatures: ActionHandler = async (_context) => {
+export const handleHelpFeatures: ActionHandler = async (context) => {
   return createSuccessResponse({
     type: 'text',
     text: ['🤖 <b>Features</b>', '', '<b>AI Chat</b>', '• Natural language conversation', '• Streaming output, real-time display', '• Context memory support', '', '<b>Session Management</b>', '• Single session mode', '• Clear context anytime', '• View session status', '', '<b>Message Actions</b>', '• Copy reply content', '• Regenerate reply', '• Continue conversation'].join('\n'),
     parseMode: 'HTML',
-    replyMarkup: createHelpKeyboard(),
+    replyMarkup: getHelpMarkup(context.platform),
   });
 };
 
 /**
  * Handle help.pairing - Show pairing guide
  */
-export const handleHelpPairing: ActionHandler = async (_context) => {
+export const handleHelpPairing: ActionHandler = async (context) => {
   return createSuccessResponse({
     type: 'text',
     text: ['🔗 <b>Pairing Guide</b>', '', '<b>First-time Setup:</b>', '1. Send any message to the bot', '2. Bot displays pairing code', '3. Approve pairing in AionUi settings', '4. Ready to use after pairing', '', '<b>Notes:</b>', '• Pairing code valid for 10 minutes', '• AionUi app must be running', '• One Telegram account can only pair once'].join('\n'),
     parseMode: 'HTML',
-    replyMarkup: createHelpKeyboard(),
+    replyMarkup: getHelpMarkup(context.platform),
   });
 };
 
 /**
  * Handle help.tips - Show usage tips
  */
-export const handleHelpTips: ActionHandler = async (_context) => {
+export const handleHelpTips: ActionHandler = async (context) => {
   return createSuccessResponse({
     type: 'text',
     text: ['💬 <b>Tips</b>', '', '<b>Effective Conversations:</b>', '• Be clear and specific', '• Feel free to ask follow-ups', '• Regenerate if not satisfied', '', '<b>Quick Actions:</b>', '• Use bottom buttons for quick access', '• Tap message buttons for actions', '• New chat clears history context'].join('\n'),
     parseMode: 'HTML',
-    replyMarkup: createHelpKeyboard(),
+    replyMarkup: getHelpMarkup(context.platform),
   });
 };
 
 /**
  * Handle settings.show - Show settings info
  */
-export const handleSettingsShow: ActionHandler = async (_context) => {
+export const handleSettingsShow: ActionHandler = async (context) => {
   return createSuccessResponse({
     type: 'text',
     text: ['⚙️ <b>Settings</b>', '', 'Channel settings need to be configured in the AionUi app.', '', 'Open AionUi → WebUI → Channels'].join('\n'),
     parseMode: 'HTML',
-    replyMarkup: createMainMenuKeyboard(),
+    replyMarkup: getMainMenuMarkup(context.platform),
   });
 };
 
@@ -325,7 +481,7 @@ export const handleAgentShow: ActionHandler = async (context) => {
     type: 'text',
     text: ['🔄 <b>Switch Agent</b>', '', 'Select an AI agent for your conversations:', '', `Current: <b>${getAgentDisplayName(currentAgent)}</b>`].join('\n'),
     parseMode: 'HTML',
-    replyMarkup: createAgentSelectionKeyboard(availableAgents, currentAgent),
+    replyMarkup: getAgentSelectionMarkup(context.platform, availableAgents, currentAgent),
   });
 };
 
@@ -358,12 +514,11 @@ export const handleAgentSelect: ActionHandler = async (context, params) => {
 
   // If same agent, no need to switch
   if (existingSession?.agentType === newAgentType) {
-    const markup = createMainMenuKeyboard();
     return createSuccessResponse({
       type: 'text',
       text: `✓ Already using <b>${getAgentDisplayName(newAgentType)}</b>`,
       parseMode: 'HTML',
-      replyMarkup: markup,
+      replyMarkup: getMainMenuMarkup(context.platform),
     });
   }
 
@@ -389,7 +544,7 @@ export const handleAgentSelect: ActionHandler = async (context, params) => {
     type: 'text',
     text: [`✓ <b>Switched to ${getAgentDisplayName(newAgentType)}</b>`, '', 'A new conversation has been started.', '', 'Send a message to begin!'].join('\n'),
     parseMode: 'HTML',
-    replyMarkup: createMainMenuKeyboard(),
+    replyMarkup: getMainMenuMarkup(context.platform),
   });
 };
 
@@ -477,6 +632,18 @@ export const systemActions: IRegisteredAction[] = [
     category: 'system',
     description: 'Show current session status',
     handler: handleSessionStatus,
+  },
+  {
+    name: SystemActionNames.SESSION_LIST,
+    category: 'system',
+    description: 'List conversations to join',
+    handler: handleSessionList,
+  },
+  {
+    name: SystemActionNames.SESSION_JOIN,
+    category: 'system',
+    description: 'Join an existing conversation',
+    handler: handleSessionJoin,
   },
   {
     name: SystemActionNames.HELP_SHOW,

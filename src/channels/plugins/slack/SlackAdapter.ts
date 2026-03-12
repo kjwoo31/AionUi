@@ -120,26 +120,44 @@ export interface SlackSendParams {
   mrkdwn?: boolean;
 }
 
+/** Slack section block text limit */
+const SECTION_TEXT_LIMIT = 3000;
+
+/**
+ * Prepare text for Slack: convert HTML to mrkdwn if the text contains HTML tags.
+ */
+function prepareSlackText(text: string, parseMode?: string): string {
+  if (parseMode === 'HTML' || /<[a-z][^>]*>/i.test(text)) {
+    return htmlToSlackMrkdwn(text);
+  }
+  return text;
+}
+
 /**
  * Convert unified outgoing message to Slack chat.postMessage parameters.
- * If replyMarkup is set, wraps text in a section block and appends replyMarkup as action blocks.
+ * If replyMarkup is set, wraps text in section blocks and appends replyMarkup as action blocks.
+ * Automatically splits long text into multiple section blocks (Slack limit: 3000 chars per section).
  */
 export function toSlackSendParams(message: IUnifiedOutgoingMessage): SlackSendParams {
-  const text = message.text || '';
+  const rawText = message.text || '';
+  const text = prepareSlackText(rawText, message.parseMode);
 
   // When replyMarkup is present, use Block Kit layout
   if (message.replyMarkup) {
     const blocks: unknown[] = [];
 
-    // Wrap text in a section block
+    // Split text into section blocks respecting 3000 char limit
     if (text) {
-      blocks.push({
-        type: 'section',
-        text: {
-          type: 'mrkdwn',
-          text,
-        },
-      });
+      const chunks = splitMessage(text, SECTION_TEXT_LIMIT);
+      for (const chunk of chunks) {
+        blocks.push({
+          type: 'section',
+          text: {
+            type: 'mrkdwn',
+            text: chunk,
+          },
+        });
+      }
     }
 
     // Append replyMarkup as action blocks

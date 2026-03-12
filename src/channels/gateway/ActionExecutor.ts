@@ -8,7 +8,7 @@ import type { TMessage } from '@/common/chatLib';
 import { getDatabase } from '@/process/database';
 import { ProcessConfig } from '@/process/initStorage';
 import { ConversationService } from '@/process/services/conversationService';
-import { buildChatErrorResponse, chatActions } from '../actions/ChatActions';
+import { chatActions } from '../actions/ChatActions';
 import { handlePairingShow, platformActions } from '../actions/PlatformActions';
 import { getChannelDefaultModel, systemActions } from '../actions/SystemActions';
 import type { IActionContext, IRegisteredAction } from '../actions/types';
@@ -36,9 +36,11 @@ function getMainMenuMarkup(platform: PluginType) {
 }
 
 /**
- * Get response actions markup based on platform
+ * Get response actions markup based on platform.
+ * Slack has no persistent keyboard, so attach main menu to every AI response.
  */
-function getResponseActionsMarkup(_platform: PluginType, _text?: string): undefined {
+function getResponseActionsMarkup(platform: PluginType, _text?: string): unknown {
+  if (platform === 'slack') return createMainMenuBlocks();
   return undefined;
 }
 
@@ -638,13 +640,13 @@ export class ActionExecutor {
     } catch (error: any) {
       console.error(`[ActionExecutor] Chat processing failed:`, error);
 
-      // Update message with error
-      const errorResponse = buildChatErrorResponse(error.message);
+      // Update message with error (use platform-aware markup)
+      const errorText = `❌ <b>Processing Failed</b>\n\n${error.message}\n\nPlease retry or start a new conversation.`;
       await context.editMessage(thinkingMsgId, {
         type: 'text',
-        text: errorResponse.text,
-        parseMode: errorResponse.parseMode,
-        replyMarkup: errorResponse.replyMarkup,
+        text: errorText,
+        parseMode: 'HTML',
+        replyMarkup: getErrorRecoveryMarkup(context.platform as PluginType, error.message),
       });
     }
   }

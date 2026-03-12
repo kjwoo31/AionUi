@@ -8,6 +8,7 @@ import type { IActionContext, IActionResult, IRegisteredAction, ActionHandler } 
 import { PlatformActionNames, createSuccessResponse, createErrorResponse } from './types';
 import { getPairingService } from '../pairing/PairingService';
 import { createPairingCodeKeyboard, createPairingStatusKeyboard, createMainMenuKeyboard } from '../plugins/telegram/TelegramKeyboards';
+import { createMainMenuBlocks, createPairingCodeBlocks, createPairingStatusBlocks } from '../plugins/slack/SlackKeyboards';
 
 /**
  * PlatformActions - Handlers for platform-specific actions
@@ -21,20 +22,23 @@ import { createPairingCodeKeyboard, createPairingStatusKeyboard, createMainMenuK
  * Get main menu markup based on platform
  */
 function getMainMenuMarkup(platform: string) {
+  if (platform === 'slack') return createMainMenuBlocks();
   return createMainMenuKeyboard();
 }
 
 /**
  * Get pairing code markup based on platform
  */
-function getPairingCodeMarkup(platform: string, code: string) {
+function getPairingCodeMarkup(platform: string, _code: string) {
+  if (platform === 'slack') return createPairingCodeBlocks();
   return createPairingCodeKeyboard();
 }
 
 /**
  * Get pairing status markup based on platform
  */
-function getPairingStatusMarkup(platform: string, code: string) {
+function getPairingStatusMarkup(platform: string, _code: string) {
+  if (platform === 'slack') return createPairingStatusBlocks();
   return createPairingStatusKeyboard();
 }
 
@@ -42,6 +46,7 @@ function getPairingStatusMarkup(platform: string, code: string) {
  * Get pairing help markup based on platform
  */
 function getPairingHelpMarkup(platform: string) {
+  if (platform === 'slack') return createPairingCodeBlocks();
   return createPairingCodeKeyboard();
 }
 
